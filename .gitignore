@@ -1,5 +1,5 @@
-data
 target
 node_modules
 .env
 output_dir
+.DS_Store

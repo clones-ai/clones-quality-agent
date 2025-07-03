@@ -1,10 +1,14 @@
 {
   "name": "pipeline",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "process.js",
   "scripts": {
     "test": "bun test",
+    "test:ocr": "bun run tests/ocr.test.ts",
+    "test:synthetic": "bun run tests/synthetic.test.ts",
     "start": "bun run src/index.ts",
+    "stats": "bun run scripts/stats.ts",
+    "download": "bun run scripts/download.ts",
     "build:windows": "bun build --compile --target=bun-windows-x64 ./src/index.ts --outfile target/pipeline-win-x64.exe",
     "build:macos": "bun build --compile --target=bun-macos-arm64 ./src/index.ts --outfile target/pipeline-macos-arm64",
     "build:linux": "bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile target/pipeline-linux-x64",
@@ -14,17 +18,17 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
-    "canvas": "^3.1.0",
+    "canvas": "^3.1.2",
     "cli-table3": "^0.6.5",
-    "mongodb": "^6.13.0",
+    "mongodb": "^6.17.0",
     "ndjson": "^2.0.0",
-    "openai": "^4.80.1",
-    "sharp": "^0.33.5",
-    "tesseract.js": "^5.1.1",
-    "tiktoken": "^1.0.18"
+    "openai": "^5.8.2",
+    "sharp": "^0.34.2",
+    "tesseract.js": "^6.0.1",
+    "tiktoken": "^1.0.21"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.7.3"
+    "typescript": "^5.8.3"
   }
 }
