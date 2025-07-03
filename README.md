@@ -7,7 +7,6 @@ Use the Viralmind data pipeline to gather information about data collected with 
 The pipeline expects input data in one of these formats:
 
 1. Gym Desktop recordings:
-
    - `session_id.mp4` - The video recording
    - `session_id.events.jsonl` - Event data in JSONL format
    - `session_id.meta.json` - Optional metadata about the recording
