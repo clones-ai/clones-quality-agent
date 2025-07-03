@@ -1,0 +1,165 @@
+{
+  "text": "OCR_FRAME 175000\nThis is a test\nTesting, testing,\nOne two three\nThe quick brown fox\njumps over the lazy\ndog\n",
+  "words": [
+    {
+      "text": "OCR_FRAME",
+      "x": 138,
+      "y": 87,
+      "width": 440,
+      "height": 73,
+      "confidence": 91
+    },
+    {
+      "text": "175000",
+      "x": 636,
+      "y": 87,
+      "width": 265,
+      "height": 63,
+      "confidence": 96
+    },
+    {
+      "text": "This",
+      "x": 66,
+      "y": 268,
+      "width": 182,
+      "height": 62,
+      "confidence": 96
+    },
+    {
+      "text": "is",
+      "x": 308,
+      "y": 268,
+      "width": 83,
+      "height": 62,
+      "confidence": 94
+    },
+    {
+      "text": "a",
+      "x": 448,
+      "y": 285,
+      "width": 38,
+      "height": 45,
+      "confidence": 96
+    },
+    {
+      "text": "test",
+      "x": 543,
+      "y": 274,
+      "width": 182,
+      "height": 56,
+      "confidence": 95
+    },
+    {
+      "text": "Testing,",
+      "x": 66,
+      "y": 385,
+      "width": 358,
+      "height": 76,
+      "confidence": 95
+    },
+    {
+      "text": "testing,",
+      "x": 496,
+      "y": 385,
+      "width": 356,
+      "height": 76,
+      "confidence": 96
+    },
+    {
+      "text": "One",
+      "x": 65,
+      "y": 501,
+      "width": 136,
+      "height": 62,
+      "confidence": 95
+    },
+    {
+      "text": "two",
+      "x": 258,
+      "y": 506,
+      "width": 134,
+      "height": 57,
+      "confidence": 95
+    },
+    {
+      "text": "three",
+      "x": 449,
+      "y": 500,
+      "width": 228,
+      "height": 63,
+      "confidence": 94
+    },
+    {
+      "text": "The",
+      "x": 66,
+      "y": 625,
+      "width": 134,
+      "height": 62,
+      "confidence": 96
+    },
+    {
+      "text": "quick",
+      "x": 257,
+      "y": 625,
+      "width": 231,
+      "height": 78,
+      "confidence": 96
+    },
+    {
+      "text": "brown",
+      "x": 544,
+      "y": 625,
+      "width": 226,
+      "height": 63,
+      "confidence": 96
+    },
+    {
+      "text": "fox",
+      "x": 828,
+      "y": 625,
+      "width": 134,
+      "height": 63,
+      "confidence": 96
+    },
+    {
+      "text": "jumps",
+      "x": 68,
+      "y": 719,
+      "width": 226,
+      "height": 76,
+      "confidence": 96
+    },
+    {
+      "text": "over",
+      "x": 352,
+      "y": 736,
+      "width": 184,
+      "height": 45,
+      "confidence": 95
+    },
+    {
+      "text": "the",
+      "x": 591,
+      "y": 718,
+      "width": 133,
+      "height": 63,
+      "confidence": 96
+    },
+    {
+      "text": "lazy",
+      "x": 782,
+      "y": 718,
+      "width": 181,
+      "height": 77,
+      "confidence": 94
+    },
+    {
+      "text": "dog",
+      "x": 67,
+      "y": 811,
+      "width": 135,
+      "height": 76,
+      "confidence": 96
+    }
+  ]
+}
