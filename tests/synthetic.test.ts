@@ -38,7 +38,7 @@ test(
 
     // Get list of available doodle files from the test directory
     const doodleFiles = fs
-      .readdirSync(TEST_DATA_DIR + '/doodles')
+      .readdirSync(path.join(TEST_DATA_DIR, 'doodles'))
       .filter((f) => f.endsWith('.ndjson') && f.startsWith('whale'))
       .map((f) => f.replace('.ndjson', ''));
 

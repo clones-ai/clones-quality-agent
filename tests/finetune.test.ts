@@ -85,59 +85,65 @@ describe('PaintPipeline - Fine-tuning Dataset Generation', () => {
       let validTrajectories = 0;
       let skippedTrajectories = 0;
 
-      console.log(`Generating ${NUM_TRAJECTORIES} trajectories...`);
-      // Generate trajectories
-      for (let i = 0; i < NUM_TRAJECTORIES; i++) {
-        console.log(`\nProcessing trajectory ${i + 1}/${NUM_TRAJECTORIES}...`);
-        // Generate events for 5 random doodles
-        console.log('Generating synthetic events...');
-        const events = await pipeline.process(doodleFiles, 2);
-        console.log(`Generated ${events.length} events.`);
+      try {
+        console.log(`Generating ${NUM_TRAJECTORIES} trajectories...`);
+        // Generate trajectories
+        for (let i = 0; i < NUM_TRAJECTORIES; i++) {
+          console.log(`\nProcessing trajectory ${i + 1}/${NUM_TRAJECTORIES}...`);
+          // Generate events for 5 random doodles
+          console.log('Generating synthetic events...');
+          const events = await pipeline.process(doodleFiles, 2);
+          console.log(`Generated ${events.length} events.`);
 
-        // Format into messages
-        console.log('Formatting events into messages...');
-        const messages = await formatter.process(events);
-        console.log(`Formatted into ${messages.length} messages.`);
+          // Format into messages
+          console.log('Formatting events into messages...');
+          const messages = await formatter.process(events);
+          console.log(`Formatted into ${messages.length} messages.`);
 
-        // Validate messages
-        for (const msg of messages) {
-          expect(msg).toHaveProperty('role');
-          expect(msg).toHaveProperty('content');
-          expect(msg).toHaveProperty('timestamp');
+          // Validate messages
+          for (const msg of messages) {
+            expect(msg).toHaveProperty('role');
+            expect(msg).toHaveProperty('content');
+            expect(msg).toHaveProperty('timestamp');
+          }
+
+          // Convert to OpenAI format
+          console.log('Converting to OpenAI format...');
+          const openaiMessages = OpenAIUtils.convertToOpenAIFormat(messages);
+
+          // Check token count
+          const tokenCount = OpenAIUtils.countConversationTokens(openaiMessages);
+          if (tokenCount > OpenAIUtils.MAX_TOKENS) {
+            console.log(`Skipping trajectory ${i + 1} - exceeds token limit (${tokenCount} tokens)`);
+            skippedTrajectories++;
+            continue;
+          }
+
+          // Update stats
+          totalMessages += messages.length;
+          imageMessages += messages.filter(
+            (m) => typeof m.content === 'object' && m.content.type === 'image'
+          ).length;
+          textMessages += messages.filter((m) => typeof m.content === 'string').length;
+          validTrajectories++;
+
+          // Write to file
+          console.log('Writing trajectory to file...');
+          writeStream.write(JSON.stringify({ messages: openaiMessages }) + '\n');
+
+          // Log progress
+          console.log(
+            `Generated trajectory ${i + 1}/${NUM_TRAJECTORIES} (${validTrajectories} valid, ${skippedTrajectories} skipped)`
+          );
         }
-
-        // Convert to OpenAI format
-        console.log('Converting to OpenAI format...');
-        const openaiMessages = OpenAIUtils.convertToOpenAIFormat(messages);
-
-        // Check token count
-        const tokenCount = OpenAIUtils.countConversationTokens(openaiMessages);
-        if (tokenCount > OpenAIUtils.MAX_TOKENS) {
-          console.log(`Skipping trajectory ${i + 1} - exceeds token limit (${tokenCount} tokens)`);
-          skippedTrajectories++;
-          continue;
-        }
-
-        // Update stats
-        totalMessages += messages.length;
-        imageMessages += messages.filter(
-          (m) => typeof m.content === 'object' && m.content.type === 'image'
-        ).length;
-        textMessages += messages.filter((m) => typeof m.content === 'string').length;
-        validTrajectories++;
-
-        // Write to file
-        console.log('Writing trajectory to file...');
-        writeStream.write(JSON.stringify({ messages: openaiMessages }) + '\n');
-
-        // Log progress
-        console.log(
-          `Generated trajectory ${i + 1}/${NUM_TRAJECTORIES} (${validTrajectories} valid, ${skippedTrajectories} skipped)`
-        );
+      } finally {
+        // Close write stream and wait for it to finish
+        await new Promise<void>((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+          writeStream.end();
+        });
       }
-
-      // Close write stream
-      writeStream.end();
 
       // Generate stats
       const stats = {

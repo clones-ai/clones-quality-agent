@@ -16,7 +16,7 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createWorker } from 'tesseract.js';
+import { createWorker, Worker } from 'tesseract.js';
 import path from 'path';
 import fs from 'node:fs';
 
@@ -29,10 +29,11 @@ test(
   async () => {
     // 1. Load ground truth data
     const groundTruth = JSON.parse(fs.readFileSync(GROUND_TRUTH_PATH, 'utf-8'));
+    let worker: Worker | undefined;
 
     try {
       console.log('Creating Tesseract worker...');
-      const worker = await createWorker('eng');
+      worker = await createWorker('eng');
       console.log('Worker created.');
 
       console.log(`Recognizing text from: ${TEST_IMAGE}`);
@@ -41,7 +42,9 @@ test(
 
       expect(ret.data).not.toBeNull();
       expect(ret.data.blocks).not.toBeNull();
-      if (!ret.data || !ret.data.blocks) return; // Type guard
+      if (!ret.data || !ret.data.blocks) {
+        throw new Error('OCR result data or blocks are missing.');
+      }
 
       // 2. Format results from OCR
       const ocrWords = ret.data.blocks
@@ -86,11 +89,13 @@ test(
       }
 
       console.log('Comparison successful!');
-
-      await worker.terminate();
     } catch (error) {
       console.error('An error occurred during the OCR test:', error);
       throw error;
+    } finally {
+      if (worker) {
+        await worker.terminate();
+      }
     }
   },
   { timeout: 30000 }
