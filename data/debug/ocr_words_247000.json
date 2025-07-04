@@ -1,0 +1,21 @@
+{
+  "text": "A —\n",
+  "words": [
+    {
+      "text": "A",
+      "x": 0,
+      "y": 0,
+      "width": 224,
+      "height": 67,
+      "confidence": 7
+    },
+    {
+      "text": "—",
+      "x": 480,
+      "y": 0,
+      "width": 157,
+      "height": 54,
+      "confidence": 0
+    }
+  ]
+}
