@@ -1,0 +1,11 @@
+{
+    "jobId": "ft-1234567890",
+    "outputModel": "gpt-3.5-turbo-0613",
+    "trainedTokens": 10000,
+    "epochs": 3,
+    "batchSize": 1,
+    "lrMultiplier": 2,
+    "trainingMethod": "fine-tuning",
+    "finalLoss": 0.1,
+    "timeTaken": "10m"
+}
