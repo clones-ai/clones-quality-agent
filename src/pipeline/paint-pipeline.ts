@@ -246,7 +246,7 @@ export class PaintPipeline {
           currentTime += 1000;
 
           // Click File
-          const fileCoords = this.bboxToCoords(this.metadata.init.elements.File);
+          const fileCoords = this.bboxToCoords(this.metadata.init.elements.FileMenu);
           events.push({
             type: 'reasoning',
             timestamp: currentTime,
@@ -296,7 +296,7 @@ export class PaintPipeline {
           currentTime += 500;
 
           // Click No
-          const noCoords = this.bboxToCoords(this.metadata.save.elements.No);
+          const noCoords = this.bboxToCoords(this.metadata.save.elements.DontSave);
           events.push({
             type: 'reasoning',
             timestamp: currentTime,
@@ -328,10 +328,10 @@ export class PaintPipeline {
         const doodleEvents = await this.loader.loadRandomDrawingFromNDJSON(
           path.join(this.dataDir, 'doodles', `${doodleName}.ndjson`),
           {
-            x: this.metadata.init.elements.canvas.x1,
-            y: this.metadata.init.elements.canvas.y1,
-            width: this.metadata.init.elements.canvas.x2 - this.metadata.init.elements.canvas.x1,
-            height: this.metadata.init.elements.canvas.y2 - this.metadata.init.elements.canvas.y1
+            x: this.metadata.init.elements.Canvas.x1,
+            y: this.metadata.init.elements.Canvas.y1,
+            width: this.metadata.init.elements.Canvas.x2 - this.metadata.init.elements.Canvas.x1,
+            height: this.metadata.init.elements.Canvas.y2 - this.metadata.init.elements.Canvas.y1
           },
           currentTime
         );

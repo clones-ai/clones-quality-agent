@@ -20,16 +20,6 @@ import { createWorker } from 'tesseract.js';
 import path from 'path';
 import fs from 'node:fs';
 
-interface Word {
-  text: string;
-  bbox: {
-    x0: number;
-    y0: number;
-    x1: number;
-    y1: number;
-  };
-  confidence: number;
-}
 
 const TEST_IMAGE = path.join(process.cwd(), 'data', 'tests', 'ocr', 'ocr_frame_175000.png');
 const GROUND_TRUTH_PATH = path.join(process.cwd(), 'data', 'tests', 'ocr', 'ocr_words.json');
