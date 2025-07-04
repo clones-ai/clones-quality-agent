@@ -50,20 +50,35 @@ test(
     const pipeline = new PaintPipeline(TEST_DATA_DIR, METADATA_PATH);
     console.log('Pipeline initialized.');
 
-    // Generate events for 5 random doodles
+    // Generate events for a single doodle to ensure determinism
     console.log('Generating synthetic events...');
-    const events = await pipeline.process(doodleFiles, 5);
+    const events = await pipeline.process(doodleFiles, 1);
     console.log(`Generated ${events.length} events.`);
 
     // Verify we have events
     expect(events.length).toBeGreaterThan(0);
 
-    // Check we have all expected event types
-    console.log('Verifying event types and timeline...');
-    expect(events.some((e) => e.type === 'quest')).toBe(true);
-    expect(events.some((e) => e.type === 'frame')).toBe(true);
-    expect(events.some((e) => e.type === 'mousedrag')).toBe(true);
-    expect(events.some((e) => e.type === 'reasoning')).toBe(true);
+    // Check we have all expected event types and their data is valid
+    console.log('Verifying event types and their content...');
+    const questEvent = events.find((e) => e.type === 'quest');
+    expect(questEvent).toBeDefined();
+    expect(questEvent?.data.message).toBeTypeOf('string');
+    expect(questEvent?.data.message?.length).toBeGreaterThan(0);
+
+    const frameEvent = events.find((e) => e.type === 'frame');
+    expect(frameEvent).toBeDefined();
+    expect(frameEvent?.data.frame).toBeTypeOf('string');
+    expect(frameEvent?.data.frame?.length).toBeGreaterThan(0);
+
+    const mousedragEvent = events.find((e) => e.type === 'mousedrag');
+    expect(mousedragEvent).toBeDefined();
+    expect(mousedragEvent?.data.coordinates).toBeArray();
+    expect(mousedragEvent?.data.coordinates?.length).toBeGreaterThan(0);
+
+    const reasoningEvent = events.find((e) => e.type === 'reasoning');
+    expect(reasoningEvent).toBeDefined();
+    expect(reasoningEvent?.data.text).toBeTypeOf('string');
+    expect(reasoningEvent?.data.text?.length).toBeGreaterThan(0);
 
     // Verify timeline consistency
     const timestamps = events.map((e) => e.timestamp);
@@ -92,7 +107,15 @@ test(
     console.log('Verifying message format...');
     for (const msg of messages) {
       expect(msg).toHaveProperty('role');
+      expect(['user', 'assistant'].includes(msg.role)).toBe(true);
       expect(msg).toHaveProperty('content');
+      if (typeof msg.content === 'string') {
+        expect(msg.content.length).toBeGreaterThan(0);
+      } else {
+        expect(msg.content).toHaveProperty('type', 'image');
+        expect(typeof msg.content.data).toBe('string');
+        expect(msg.content.data.length).toBeGreaterThan(0);
+      }
       expect(msg).toHaveProperty('timestamp');
     }
     console.log('Message format verification successful.');
