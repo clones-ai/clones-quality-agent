@@ -84,3 +84,11 @@ You can adjust the chunk size (default 4) to control how many messages are proce
 ```bash
 bun run src/index.ts -i . --grade --chunk-size 8
 ```
+
+## Running Tests
+
+To run the test suite, use the following command:
+
+```bash
+bun test
+```
