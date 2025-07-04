@@ -58,8 +58,17 @@ export class StructuredDataAugmenter implements PipelineStage<ProcessedEvent[], 
     fs.writeFileSync(imagePath, imageBuffer);
 
     // Get words with bounding boxes
-    const { data } = await this.worker!.recognize(imagePath);
-    const words = data.words;
+    const { data } = await this.worker!.recognize(imagePath, {}, { blocks: true });
+
+    // Type guard for safety
+    if (!data || !data.blocks) {
+      console.log(`[StructuredDataAugmenter] No text blocks found in frame ${timestamp}`);
+      return [];
+    }
+
+    const words = data.blocks
+      .map((block) => block.paragraphs.map((paragraph) => paragraph.lines.map((line) => line.words)))
+      .flat(3);
 
     // Save OCR output for debugging
     fs.writeFileSync(
