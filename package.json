@@ -4,8 +4,6 @@
   "main": "process.js",
   "scripts": {
     "test": "bun test",
-    "test:ocr": "bun run tests/ocr.test.ts",
-    "test:synthetic": "bun run tests/synthetic.test.ts",
     "start": "bun run src/index.ts",
     "stats": "bun run scripts/stats.ts",
     "download": "bun run scripts/download.ts",
