@@ -1,6 +1,6 @@
-# Viralmind Data Pipeline
+# Clones Data Pipeline
 
-Use the Viralmind data pipeline to gather information about data collected with the Viralmind training gym.
+Use the Clones data pipeline to gather information about data collected with the Clones factory's demos.
 
 ## Input Data Format
 
