@@ -21,6 +21,10 @@ jobs:
         run: bun install
       - name: Build Pipeline for All Operating Systems
         run: bun run build
+
+      - name: Fix Artifact Permissions
+        run: chmod -R +r target/
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
