@@ -1,60 +1,110 @@
 import { OpenAI } from 'openai';
 import path from 'path';
 
-interface MetaData {
-  id: string;
-  timestamp: string;
-  duration_seconds: number;
-  status: string;
-  reason: string;
-  title: string;
-  description: string;
-  platform: string;
-  arch: string;
-  version: string;
-  locale: string;
-  primary_monitor: {
-    width: number;
-    height: number;
+export interface MetaData {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly duration_seconds: number;
+  readonly status: string;
+  readonly reason: string;
+  readonly title: string;
+  readonly description: string;
+  readonly platform: string;
+  readonly arch: string;
+  readonly version: string;
+  readonly locale: string;
+  readonly primary_monitor: {
+    readonly width: number;
+    readonly height: number;
   };
-  quest: {
-    title: string;
-    app: string;
-    icon_url: string;
-    objectives: string[];
-    content: string;
-  };
-}
-
-interface Message {
-  role: string;
-  content: string | {
-    type: string;
-    data: string;
+  readonly quest: {
+    readonly title: string;
+    readonly app: string;
+    readonly icon_url: string;
+    readonly objectives: readonly string[];
+    readonly content: string;
   };
 }
 
-interface GradeResult {
-  summary: string;
-  scratchpad: string;
-  score: number;
-  reasoning: string;
+export interface Message {
+  readonly role: 'user' | 'assistant';
+  readonly content: string | {
+    readonly type: 'image';
+    readonly data: string;
+  };
+}
+
+export interface GradeResult {
+  readonly summary: string;
+  readonly scratchpad: string;
+  readonly score: number;
+  readonly reasoning: string;
+}
+
+export interface GraderConfig {
+  readonly apiKey: string;
+  readonly chunkSize?: number;
+  readonly model?: string;
+  readonly timeout?: number;
+  readonly maxRetries?: number;
+}
+
+export interface GraderLogger {
+  info(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, error?: Error, meta?: Record<string, unknown>): void;
+  debug(message: string, meta?: Record<string, unknown>): void;
+}
+
+class DefaultLogger implements GraderLogger {
+  info(message: string, meta?: Record<string, unknown>): void {
+    console.log(`[INFO] ${message}`, meta ? JSON.stringify(meta) : '');
+  }
+
+  error(message: string, error?: Error, meta?: Record<string, unknown>): void {
+    console.error(`[ERROR] ${message}`, error?.message || '', meta ? JSON.stringify(meta) : '');
+  }
+
+  debug(message: string, meta?: Record<string, unknown>): void {
+    console.debug(`[DEBUG] ${message}`, meta ? JSON.stringify(meta) : '');
+  }
 }
 
 export class Grader {
-  private client: OpenAI;
-  private chunkSize: number;
+  private readonly client: OpenAI;
+  private readonly chunkSize: number;
+  private readonly model: string;
+  private readonly maxRetries: number;
+  private readonly logger: GraderLogger;
 
-  private model: string;
-
-  constructor(apiKey: string, chunkSize: number = 4, model?: string) {
-    if (!apiKey) {
-      throw new Error('OpenAI API key is required');
+  constructor(config: GraderConfig, logger?: GraderLogger) {
+    if (!config.apiKey.trim()) {
+      throw new Error('OpenAI API key is required and cannot be empty');
     }
-    this.client = new OpenAI({ apiKey });
-    this.chunkSize = chunkSize;
+
+    this.chunkSize = Math.max(1, config.chunkSize ?? 4);
+    this.maxRetries = Math.max(1, config.maxRetries ?? 3);
+    this.logger = logger ?? new DefaultLogger();
+
+    this.client = new OpenAI({
+      apiKey: config.apiKey,
+      timeout: config.timeout ?? 60 * 1000, // 60-second timeout by default
+      maxRetries: this.maxRetries
+    });
+
     // Use environment variable GRADER_MODEL if available, otherwise use provided model or default to gpt-4o
-    this.model = model || process.env.GRADER_MODEL || 'gpt-4o';
+    this.model = config.model || process.env.GRADER_MODEL || 'gpt-4o';
+
+    this.logger.info('Grader initialized', {
+      model: this.model,
+      chunkSize: this.chunkSize,
+      maxRetries: this.maxRetries,
+      timeout: config.timeout ?? 60000
+    });
+  }
+
+  // Legacy constructor for backward compatibility
+  static create(apiKey: string, chunkSize: number = 4, model?: string): Grader {
+    return new Grader({ apiKey, chunkSize, model });
   }
 
   private createSystemPrompt(meta: MetaData, prevSummary: string | null = null, isFinal: boolean = false): string {
@@ -115,9 +165,14 @@ Example format:
     return basePrompt;
   }
 
-  private chunkMessages(messages: Message[], chunkSize: number): Message[][] {
+  private chunkMessages(messages: readonly Message[], chunkSize: number): readonly Message[][] {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      this.logger.error('Invalid messages array provided to chunkMessages');
+      return [];
+    }
+
     // Filter out scroll messages first
-    const filteredMessages = messages.filter(msg => {
+    const filteredMessages = messages.filter((msg): msg is Message => {
       if (typeof msg.content === 'string') {
         let content = msg.content;
         // Remove python code block if present
@@ -131,11 +186,22 @@ Example format:
       return true;
     });
 
+    this.logger.debug('Messages filtered', {
+      originalCount: messages.length,
+      filteredCount: filteredMessages.length
+    });
+
     // Then chunk the filtered messages
     const chunks: Message[][] = [];
     for (let i = 0; i < filteredMessages.length; i += chunkSize) {
       chunks.push(filteredMessages.slice(i, i + chunkSize));
     }
+
+    this.logger.debug('Messages chunked', {
+      chunkCount: chunks.length,
+      chunkSize: chunkSize
+    });
+
     return chunks;
   }
 
@@ -180,7 +246,7 @@ Example format:
 
   private async evaluateChunk(
     systemPrompt: string,
-    messages: Message[],
+    messages: readonly Message[],
     isFinal: boolean,
     chunkIndex: number = 0,
     totalChunks: number = 1
@@ -188,7 +254,7 @@ Example format:
     try {
       // Add chunk metadata to system prompt
       const actionCount = messages.length;
-      
+
       const enhancedSystemPrompt = `${systemPrompt}
 
 CHUNK METADATA:
@@ -222,7 +288,7 @@ ${actionCount === 0 ? "WARNING: This chunk contains no user actions, only screen
           content: this.formatMessageContent(messages[i].content, typeof prevMessage === 'string' ? prevMessage : undefined)
         });
       }
-      
+
       // Add a clear marker for the end of actions
       formattedMessages.push({
         role: 'user',
@@ -239,7 +305,11 @@ ${actionCount === 0 ? "NOTE: This chunk contained no user actions, only screensh
 
       return response.choices[0].message.content;
     } catch (error) {
-      console.error('Error calling OpenAI API:', error);
+      this.logger.error('Error calling OpenAI API', error as Error, {
+        chunkIndex: chunkIndex + 1,
+        totalChunks,
+        actionCount: messages.length
+      });
       return null;
     }
   }
@@ -250,73 +320,204 @@ ${actionCount === 0 ? "NOTE: This chunk contained no user actions, only screensh
     return match ? match[1].trim() : null;
   }
 
-  async grade(metaPath: string, sftPath: string): Promise<GradeResult | null> {
+  async grade(meta: MetaData, sft: readonly Message[]): Promise<GradeResult | null>;
+  async grade(metaPath: string, sftPath: string): Promise<GradeResult | null>;
+  async grade(
+    metaOrPath: MetaData | string,
+    sftOrPath: readonly Message[] | string
+  ): Promise<GradeResult | null> {
+    const startTime = Date.now();
+
     try {
-      // Read input files
-      const meta: MetaData = await Bun.file(metaPath).json();
-      const sft = await Bun.file(sftPath).json();
+      let meta: MetaData;
+      let sft: readonly Message[];
+
+      if (typeof metaOrPath === 'string' && typeof sftOrPath === 'string') {
+        this.logger.info('Reading input files', { metaPath: metaOrPath, sftPath: sftOrPath });
+
+        // Read input files if paths are provided
+        const [metaFile, sftFile] = await Promise.all([
+          Bun.file(metaOrPath).json(),
+          Bun.file(sftOrPath).json()
+        ]);
+
+        meta = metaFile as MetaData;
+        sft = sftFile as readonly Message[];
+      } else {
+        // Use provided data directly
+        meta = metaOrPath as MetaData;
+        sft = sftOrPath as readonly Message[];
+      }
+
+      // Validate inputs
+      if (!meta?.id || !meta?.quest?.objectives) {
+        throw new Error('Invalid metadata: missing required fields');
+      }
+
+      if (!Array.isArray(sft) || sft.length === 0) {
+        throw new Error('Invalid SFT data: must be a non-empty array');
+      }
 
       // Split messages into chunks
       const chunks = this.chunkMessages(sft, this.chunkSize);
       const totalChunks = chunks.length;
 
-      console.log(`Processing ${totalChunks} chunks...`);
+      if (totalChunks === 0) {
+        this.logger.error('No chunks to process after filtering messages');
+        return null;
+      }
+
+      this.logger.info('Starting grading process', {
+        sessionId: meta.id,
+        totalChunks,
+        totalMessages: sft.length,
+        objectives: meta.quest.objectives.length
+      });
 
       // Process each chunk
       let prevSummary: string | null = null;
-      for (let i = 0; i < chunks.length; i++) {
+
+      for (const [i, chunk] of chunks.entries()) {
         const isFinal = i === chunks.length - 1;
-        const chunk = chunks[i];
+        const chunkResult = await this.processChunkWithRetries(
+          meta,
+          chunk,
+          prevSummary,
+          isFinal,
+          i,
+          totalChunks
+        );
 
-        console.log(`\nProcessing chunk ${i + 1}/${totalChunks}`);
-        const systemPrompt = this.createSystemPrompt(meta, prevSummary, isFinal);
-        const evaluation = await this.evaluateChunk(systemPrompt, chunk, isFinal, i, totalChunks);
-
-        if (!evaluation) {
-          console.log('Failed to get evaluation');
-          continue;
-        }
-
-        if (isFinal) {
-          const summary = this.extractTags(evaluation, 'summary');
-          const scratchpad = this.extractTags(evaluation, 'scratchpad');
-          const score = this.extractTags(evaluation, 'answer');
-          const reasoning = this.extractTags(evaluation, 'reasoning');
-
-          if (!summary || !scratchpad || !score || !reasoning) {
-            console.log('Failed to parse final evaluation tags, retrying chunk...');
-            i--; // Retry this chunk
-            continue;
-          }
-
-          console.log({
-            summary: summary,
-            scratchpad: scratchpad,
-            score: parseInt(score),
-            reasoning: reasoning
+        if (!chunkResult.success) {
+          this.logger.error('Failed to process chunk after retries', undefined, {
+            chunkIndex: i + 1,
+            totalChunks,
+            sessionId: meta.id
           });
-
-          return {
-            summary: summary,
-            scratchpad: scratchpad,
-            score: parseInt(score),
-            reasoning: reasoning
-          };
-        } else {
-          prevSummary = this.extractTags(evaluation, 'summary');
-          if (!prevSummary) {
-            console.log('Failed to parse summary tag, retrying chunk...');
-            i--; // Retry this chunk
-            continue;
-          }
-          console.log(`Progress Summary: ${prevSummary}`);
+          return null;
         }
+
+        if (isFinal && chunkResult.result) {
+          const duration = Date.now() - startTime;
+          this.logger.info('Grading completed successfully', {
+            sessionId: meta.id,
+            score: chunkResult.result.score,
+            duration: `${duration}ms`
+          });
+          return chunkResult.result;
+        }
+
+        prevSummary = chunkResult.summary ?? null;
       }
 
+      this.logger.error('Unexpected end of chunk processing');
       return null;
     } catch (error) {
-      console.error('Error during grading:', error);
+      const duration = Date.now() - startTime;
+      this.logger.error('Error during grading', error as Error, {
+        duration: `${duration}ms`,
+        sessionId: typeof metaOrPath === 'object' ? metaOrPath.id : 'unknown'
+      });
       return null;
     }
+  }
+
+  private async processChunkWithRetries(
+    meta: MetaData,
+    chunk: readonly Message[],
+    prevSummary: string | null,
+    isFinal: boolean,
+    chunkIndex: number,
+    totalChunks: number
+  ): Promise<{ success: boolean; result?: GradeResult; summary?: string }> {
+    let retries = 0;
+
+    while (retries < this.maxRetries) {
+      const isRetry = retries > 0;
+
+      this.logger.info('Processing chunk', {
+        chunkIndex: chunkIndex + 1,
+        totalChunks,
+        attempt: retries + 1,
+        maxRetries: this.maxRetries,
+        isFinal,
+        isRetry
+      });
+
+      const systemPrompt = this.createSystemPrompt(meta, prevSummary, isFinal);
+      const evaluation = await this.evaluateChunk(systemPrompt, chunk, isFinal, chunkIndex, totalChunks);
+
+      if (!evaluation) {
+        this.logger.error('Failed to get evaluation from API', undefined, {
+          chunkIndex: chunkIndex + 1,
+          attempt: retries + 1
+        });
+        retries++;
+        continue;
+      }
+
+      if (isFinal) {
+        const result = this.parseFinalEvaluation(evaluation);
+        if (result) {
+          this.logger.debug('Final evaluation parsed successfully', {
+            chunkIndex: chunkIndex + 1,
+            score: result.score
+          });
+          return { success: true, result };
+        }
+
+        this.logger.error('Failed to parse final evaluation tags', undefined, {
+          chunkIndex: chunkIndex + 1,
+          attempt: retries + 1,
+          evaluation: evaluation.substring(0, 200) + '...'
+        });
+        retries++;
+      } else {
+        const summary = this.extractTags(evaluation, 'summary');
+        if (summary) {
+          this.logger.debug('Intermediate summary extracted', {
+            chunkIndex: chunkIndex + 1,
+            summary: summary.substring(0, 100) + '...'
+          });
+          return { success: true, summary };
+        }
+
+        this.logger.error('Failed to parse summary tag', undefined, {
+          chunkIndex: chunkIndex + 1,
+          attempt: retries + 1,
+          evaluation: evaluation.substring(0, 200) + '...'
+        });
+        retries++;
+      }
+    }
+
+    return { success: false };
+  }
+
+  private parseFinalEvaluation(evaluation: string): GradeResult | null {
+    const summary = this.extractTags(evaluation, 'summary');
+    const scratchpad = this.extractTags(evaluation, 'scratchpad');
+    const scoreStr = this.extractTags(evaluation, 'answer');
+    const reasoning = this.extractTags(evaluation, 'reasoning');
+
+    if (!summary || !scratchpad || !scoreStr || !reasoning) {
+      return null;
+    }
+
+    const score = parseInt(scoreStr, 10);
+    if (isNaN(score) || score < 0 || score > 100) {
+      this.logger.error('Invalid score in evaluation', undefined, {
+        scoreStr,
+        parsedScore: score
+      });
+      return null;
+    }
+
+    return {
+      summary,
+      scratchpad,
+      score,
+      reasoning
+    };
   }
 }

@@ -1,9 +1,13 @@
 {
   "name": "pipeline",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "process.js",
   "scripts": {
     "test": "bun test",
+    "test:grading": "bun run scripts/test-grading.ts",
+    "test:grading:unit": "bun run scripts/test-grading.ts --unit",
+    "test:grading:integration": "bun run scripts/test-grading.ts --integration",
+    "test:grading:all": "bun run scripts/test-grading.ts --all",
     "start": "bun run src/index.ts",
     "stats": "bun run scripts/stats.ts",
     "download": "bun run scripts/download.ts",
@@ -18,15 +22,15 @@
   "dependencies": {
     "canvas": "^3.1.2",
     "cli-table3": "^0.6.5",
-    "mongodb": "^6.17.0",
+    "mongodb": "^6.18.0",
     "ndjson": "^2.0.0",
-    "openai": "^5.8.2",
-    "sharp": "^0.34.2",
+    "openai": "^5.12.2",
+    "sharp": "^0.34.3",
     "tesseract.js": "^6.0.1",
-    "tiktoken": "^1.0.21"
+    "tiktoken": "^1.0.22"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.2"
   }
 }

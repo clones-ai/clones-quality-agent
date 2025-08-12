@@ -10,7 +10,24 @@ import { GymDesktopExtractor } from './stages/extraction/simple-extractor';
 import { MessageFormatter } from './stages/formatting/message-formatter';
 import path from 'path';
 
-import { Grader } from './stages/grading/grader';
+import { Grader, type GraderLogger } from './stages/grading/grader';
+
+// Optional: Create a custom logger for production use
+class ProductionLogger implements GraderLogger {
+  info(message: string, meta?: Record<string, unknown>): void {
+    console.log(`[GRADER-INFO] ${message}`, meta ? JSON.stringify(meta) : '');
+  }
+
+  error(message: string, error?: Error, meta?: Record<string, unknown>): void {
+    console.error(`[GRADER-ERROR] ${message}`, error?.message || '', meta ? JSON.stringify(meta) : '');
+  }
+
+  debug(message: string, meta?: Record<string, unknown>): void {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug(`[GRADER-DEBUG] ${message}`, meta ? JSON.stringify(meta) : '');
+    }
+  }
+}
 import { parseArgs } from 'util';
 
 const { values } = parseArgs({
@@ -97,17 +114,23 @@ const pipeline = new Pipeline({
     format === 'desktop'
       ? []
       : [
-          new DenseCaptionAugmenter(1),
-          new StateTransitionAugmenter(1),
-          new StructuredDataAugmenter(1)
-        ]
+        new DenseCaptionAugmenter(1),
+        new StateTransitionAugmenter(1),
+        new StructuredDataAugmenter(1)
+      ]
 });
 
 console.log(`Starting processing of ${sessions.length} sessions...`);
 
 if (values.grade) {
   // Grading mode
-  const grader = new Grader(process.env.OPENAI_API_KEY!, parseInt(values['chunk-size']));
+  const productionLogger = new ProductionLogger();
+  const grader = new Grader({
+    apiKey: process.env.OPENAI_API_KEY!,
+    chunkSize: parseInt(values['chunk-size']),
+    timeout: 60 * 1000,
+    maxRetries: 3
+  }, productionLogger);
 
   for (const session of sessions) {
     console.log(`\nProcessing session: ${session}`);
