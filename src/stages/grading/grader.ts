@@ -193,7 +193,9 @@ export class Grader {
       throw new Error('OpenAI API key is required and cannot be empty');
     }
 
-    this.chunkSize = Math.max(1, config.chunkSize ?? 4);
+    const rawChunk = config.chunkSize;
+    const normalizedChunk = (typeof rawChunk === 'number' && Number.isFinite(rawChunk) && rawChunk > 0) ? rawChunk : 4;
+    this.chunkSize = normalizedChunk;
     this.maxRetries = Math.max(1, config.maxRetries ?? 3);
     this.logger = logger ?? new DefaultLogger();
 
