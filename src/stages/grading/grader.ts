@@ -440,7 +440,7 @@ The response will be automatically formatted with a single field:
       if (prevMessage) {
         const coords = this.extractClickCoordinates(prevMessage);
         if (coords) {
-          cropInfo = ` The image is cropped to a 768x768 area centered around the cursor at coordinates ${coords}.`;
+          cropInfo = ` Note: The previous action was a click at coordinates ${coords}.`;
         }
       }
 
@@ -448,7 +448,8 @@ The response will be automatically formatted with a single field:
         {
           type: 'image_url',
           image_url: {
-            url: `data:image/jpeg;base64,${content.data}`
+            url: `data:image/jpeg;base64,${content.data}`,
+            detail: 'low' // Use low detail for cost optimization - trajectory evaluation doesn't need high fidelity
           }
         },
         {
@@ -592,12 +593,96 @@ ${actionCount === 0 ?
       // With Structured Outputs, the response is guaranteed to be valid JSON
       return JSON.parse(text.trim());
     } catch (error) {
-      // This should rarely happen with Structured Outputs
-      this.logger.error('Failed to parse structured response', error as Error, {
+      // Fallback: Even with Structured Outputs, OpenAI can sometimes return truncated JSON
+      // due to finish_reason="stop" issues (see: https://community.openai.com/t/response-format-json-object-returns-invalid-json-with-finish-reason-stop/1083001)
+      this.logger.debug('Attempting JSON repair for potentially truncated response', {
+        rawResponse: text?.substring(0, 200) + '...'
+      });
+
+      const repairedJson = this.repairTruncatedJson(text.trim());
+      if (repairedJson) {
+        this.logger.info('Successfully repaired truncated JSON response');
+        return repairedJson;
+      }
+
+      this.logger.error('Failed to parse structured response even after repair attempt', error as Error, {
         rawResponse: text?.substring(0, 200) + '...'
       });
       return null;
     }
+  }
+
+  private repairTruncatedJson(text: string): any | null {
+    try {
+      // Step 1: Extract balanced braces content
+      const balancedJson = this.extractBalancedBraces(text);
+      if (!balancedJson) {
+        return null;
+      }
+
+      // Step 2: Try parsing the balanced content
+      try {
+        return JSON.parse(balancedJson);
+      } catch {
+        // Step 3: Attempt basic repairs for common truncation patterns
+        const repaired = this.attemptBasicJsonRepairs(balancedJson);
+        return JSON.parse(repaired);
+      }
+    } catch (error) {
+      this.logger.debug('JSON repair failed', { error: (error as Error).message });
+      return null;
+    }
+  }
+
+  private extractBalancedBraces(text: string): string | null {
+    let braceCount = 0;
+    let startIndex = -1;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (char === '{') {
+        if (startIndex === -1) {
+          startIndex = i;
+        }
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+
+        // Found balanced braces
+        if (braceCount === 0 && startIndex !== -1) {
+          return text.substring(startIndex, i + 1);
+        }
+      }
+    }
+
+    // If we have unbalanced braces, try to close them
+    if (startIndex !== -1 && braceCount > 0) {
+      let result = text.substring(startIndex);
+      // Close unclosed braces
+      result += '}'.repeat(braceCount);
+      return result;
+    }
+
+    return null;
+  }
+
+  private attemptBasicJsonRepairs(json: string): string {
+    let repaired = json;
+
+    // Remove trailing commas before closing braces/brackets
+    repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+
+    // Handle incomplete string values (missing closing quote)
+    repaired = repaired.replace(/"([^"]*?)$/, '"$1"');
+
+    // Handle incomplete property names
+    repaired = repaired.replace(/,\s*"([^"]*?)$/, '');
+
+    // Handle incomplete numeric values followed by comma
+    repaired = repaired.replace(/:\s*\d+\.\d*,?\s*$/, '');
+
+    return repaired;
   }
 
   async grade(meta: MetaData, sft: readonly Message[]): Promise<GradeResult | null>;
