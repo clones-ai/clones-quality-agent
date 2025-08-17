@@ -10,21 +10,25 @@ import { GymDesktopExtractor } from './stages/extraction/simple-extractor';
 import { MessageFormatter } from './stages/formatting/message-formatter';
 import path from 'path';
 
-import { Grader, type GraderLogger } from './stages/grading/grader';
+import { Grader, type GraderLogger, type Chunk, type MetaData } from './stages/grading/grader';
 
 // Optional: Create a custom logger for production use
 class ProductionLogger implements GraderLogger {
-  info(message: string, meta?: Record<string, unknown>): void {
+  info(message: string, err?: Error, meta?: Record<string, unknown>): void {
     console.log(`[GRADER-INFO] ${message}`, meta ? JSON.stringify(meta) : '');
+    if (err) console.log(`[GRADER-INFO-ERR] ${err.message}`);
   }
-
-  error(message: string, error?: Error, meta?: Record<string, unknown>): void {
-    console.error(`[GRADER-ERROR] ${message}`, error?.message || '', meta ? JSON.stringify(meta) : '');
+  warn(message: string, err?: Error, meta?: Record<string, unknown>): void {
+    console.warn(`[GRADER-WARN] ${message}`, meta ? JSON.stringify(meta) : '');
+    if (err) console.warn(`[GRADER-WARN-ERR] ${err.message}`);
   }
-
-  debug(message: string, meta?: Record<string, unknown>): void {
+  error(message: string, err?: Error, meta?: Record<string, unknown>): void {
+    console.error(`[GRADER-ERROR] ${message}`, err?.message || '', meta ? JSON.stringify(meta) : '');
+  }
+  debug(message: string, err?: Error, meta?: Record<string, unknown>): void {
     if (process.env.NODE_ENV === 'development') {
       console.debug(`[GRADER-DEBUG] ${message}`, meta ? JSON.stringify(meta) : '');
+      if (err) console.debug(`[GRADER-DEBUG-ERR] ${err.message}`);
     }
   }
 }
@@ -74,6 +78,27 @@ const { values } = parseArgs({
   allowPositionals: true
 });
 
+// Convert an array of SFT messages into Grader chunks of size N
+function sftToChunks(messages: any[], chunkSize: number): Chunk[] {
+  const items = (messages ?? []).map((m: any) => {
+    // Common cases: { role, content }, or strings
+    if (typeof m === 'string') return { type: 'text', text: String(m) };
+    if (m && typeof m.content === 'string') return { type: 'text', text: m.content };
+    // Optional image support if present in SFT (base64 fields)
+    if (m && m.type === 'image' && typeof m.data === 'string') {
+      return { type: 'image', data: m.data, mime: m.mime ?? 'image/jpeg', cropInfo: m.cropInfo };
+    }
+    // Fallback: stringify unknown message shape (trim to avoid huge prompts)
+    return { type: 'text', text: JSON.stringify(m).slice(0, 1000) };
+  });
+  const chunks: Chunk[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize) as Chunk);
+  }
+  return chunks;
+}
+
+
 // Check for OpenAI API key if grading
 if (values.grade && !process.env.OPENAI_API_KEY) {
   console.error('Error: OPENAI_API_KEY environment variable is required for grading mode');
@@ -106,9 +131,9 @@ const pipeline = new Pipeline({
   sessionIds: sessions,
   extractors: [
     new VideoExtractor(dataDir, values.ffmpeg, values.ffprobe),
-    format === 'desktop'
-      ? new GymDesktopExtractor(dataDir)
-      : (new GuacExtractor(dataDir), new EventExtractor(dataDir))
+    ...(format === 'desktop'
+      ? [new GymDesktopExtractor(dataDir)]
+      : [new GuacExtractor(dataDir), new EventExtractor(dataDir)])
   ],
   augmenters:
     format === 'desktop'
@@ -144,14 +169,23 @@ if (values.grade) {
       await Bun.file(sftPath).json();
 
       // Grade existing sft.json
+      // Grade using the new Grader API
       console.log('Found existing sft.json, grading...');
-      const result = await grader.grade(metaPath, sftPath);
+      const sftMessages = await Bun.file(sftPath).json();
+      let metaJson: any = {};
+      try { metaJson = await Bun.file(metaPath).json(); } catch { }
+      const meta: MetaData = {
+        sessionId: session,
+        platform: (format === 'desktop' ? 'desktop' : 'web'),
+        taskDescription: metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
+      };
+      const chunkSize = Number.isFinite(Number(values['chunk-size'])) && Number(values['chunk-size']) > 0
+        ? Number(values['chunk-size']) : 4;
+      const chunks = sftToChunks(sftMessages, chunkSize);
+      const result = await grader.evaluateSession(chunks, meta);
       if (result) {
         console.log('\nGrading complete!');
         console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-        if (result.modelScoreRaw !== result.score) {
-          console.log(`Model Raw Score: ${result.modelScoreRaw}/100 (difference: ${Math.abs(result.score - result.modelScoreRaw)})`);
-        }
         console.log('\nScore Breakdown:');
         console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
         console.log(`- Process Quality: ${result.processQuality}/100`);
@@ -185,15 +219,24 @@ if (values.grade) {
       await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
       await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
 
-      // Now grade the newly created sft.json
+
+      // Now grade the newly created sft.json with the new API
       console.log('\nGrading new sft.json...');
-      const result = await grader.grade(metaPath, sftPath);
+      const sftMessages2 = await Bun.file(sftPath).json();
+      let metaJson2: any = {};
+      try { metaJson2 = await Bun.file(metaPath).json(); } catch { }
+      const meta2: MetaData = {
+        sessionId: session,
+        platform: (format === 'desktop' ? 'desktop' : 'web'),
+        taskDescription: metaJson2?.quest?.title ?? metaJson2?.title ?? metaJson2?.description ?? undefined
+      };
+      const chunkSize2 = Number.isFinite(Number(values['chunk-size'])) && Number(values['chunk-size']) > 0
+        ? Number(values['chunk-size']) : 4;
+      const chunks2 = sftToChunks(sftMessages2, chunkSize2);
+      const result = await grader.evaluateSession(chunks2, meta2);
       if (result) {
         console.log('\nGrading complete!');
         console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-        if (result.modelScoreRaw !== result.score) {
-          console.log(`Model Raw Score: ${result.modelScoreRaw}/100 (difference: ${Math.abs(result.score - result.modelScoreRaw)})`);
-        }
         console.log('\nScore Breakdown:');
         console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
         console.log(`- Process Quality: ${result.processQuality}/100`);
