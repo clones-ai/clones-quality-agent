@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
+import { describe, it, expect, mock, beforeEach, afterEach, spyOn, jest } from 'bun:test';
 import { Grader, type GraderConfig, type GraderLogger } from '../src/stages/grading/grader';
 import type { Message, MetaData, GradeResult } from '../src/stages/grading/grader';
 import type { OpenAI } from 'openai';
@@ -19,6 +19,12 @@ mock.module('openai', () => ({
             // Mock constructor
         }
     }
+}));
+
+// Mock the sleep function
+const mockSleep = mock(() => Promise.resolve());
+mock.module('../src/shared/utils/sleep', () => ({
+    sleep: mockSleep,
 }));
 
 // Mock logger for testing - suppresses console output during tests
@@ -101,6 +107,7 @@ describe('Grader', () => {
 
     afterEach(() => {
         testLogger.clear();
+        mockSleep.mockClear();
     });
 
     describe('Constructor', () => {
@@ -196,6 +203,7 @@ describe('Grader', () => {
 
             // Called 3 times: chunk 1 (1), chunk 2 (2 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
+            expect(mockSleep).toHaveBeenCalledTimes(1); // Called once for the delay
 
             // Check error logging
             expect(testLogger.logs.some(log =>
@@ -216,6 +224,7 @@ describe('Grader', () => {
 
             // Called 4 times: chunk 1 (1), chunk 2 (3 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(4);
+            expect(mockSleep).toHaveBeenCalledTimes(2); // Called for the first 2 retries
 
             // Check failure logging
             expect(testLogger.logs.some(log =>
@@ -253,6 +262,7 @@ describe('Grader', () => {
 
             // Called 3 times: chunk 1 (1), chunk 2 (2 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
+            expect(mockSleep).toHaveBeenCalledTimes(1);
         });
 
         it('should fail if the response format is always invalid after max retries', async () => {
@@ -270,6 +280,7 @@ describe('Grader', () => {
 
             // Called 4 times: chunk 1 (1), chunk 2 (3 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(4);
+            expect(mockSleep).toHaveBeenCalledTimes(2);
         });
 
         it('should handle invalid metadata', async () => {
@@ -292,16 +303,16 @@ describe('Grader', () => {
             )).toBe(true);
         });
 
-        it('should handle invalid score in evaluation', async () => {
-            const invalidScoreEvaluation = JSON.stringify({
+        it('should handle edge case scores within valid bounds', async () => {
+            const edgeCaseEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                observations: "Observations with invalid score",
-                score: "invalid",  // Invalid score type
+                observations: "Observations with edge case scores",
+                score: 0,  // Valid minimum score
                 reasoning: "Final Reasoning",
-                confidence: 0.7,
-                outcomeAchievement: 70,
-                processQuality: 75,
-                efficiency: 65
+                confidence: 0.0,  // Valid minimum confidence
+                outcomeAchievement: 100,  // Valid maximum
+                processQuality: 0,   // Valid minimum
+                efficiency: 50
             });
 
             mockChatCompletionsCreate
@@ -309,15 +320,64 @@ describe('Grader', () => {
                     choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValue({
-                    choices: [{ message: { content: invalidScoreEvaluation } }]
+                    choices: [{ message: { content: edgeCaseEvaluation } }]
                 });
 
             const result = await grader.grade(metaData, sftData);
 
-            expect(result).toBeNull();
-            expect(testLogger.logs.some(log =>
-                log.level === 'error' && log.message === 'Invalid score in evaluation'
-            )).toBe(true);
+            expect(result).not.toBeNull();
+            expect(result?.score).toBe(0);
+            expect(result?.confidence).toBe(0.0);
+            expect(result?.outcomeAchievement).toBe(100);
+            expect(result?.processQuality).toBe(0);
+        });
+
+        it('should use exponential backoff with jitter for retries', async () => {
+            // Mock sleep to capture the delay values
+            const sleepDelays: number[] = [];
+            mockSleep.mockImplementation((ms: number) => {
+                sleepDelays.push(ms);
+                return Promise.resolve();
+            });
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockRejectedValueOnce(new Error('API Error'))
+                .mockRejectedValueOnce(new Error('API Error'))
+                .mockResolvedValueOnce({
+                    choices: [{
+                        message: {
+                            content: JSON.stringify({
+                                summary: "Final Summary",
+                                observations: "Final observations",
+                                score: 85,
+                                reasoning: "Final Reasoning",
+                                confidence: 0.9,
+                                outcomeAchievement: 80,
+                                processQuality: 90,
+                                efficiency: 85
+                            })
+                        }
+                    }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).not.toBeNull();
+            expect(mockSleep).toHaveBeenCalledTimes(2);
+
+            // Verify exponential backoff: 500 * 2^(retries-1) + jitter
+            // First retry: 500 * 2^0 = 500ms base + jitter (0-250ms) = 500-750ms
+            // Second retry: 500 * 2^1 = 1000ms base + jitter (0-250ms) = 1000-1250ms
+            expect(sleepDelays[0]).toBeGreaterThanOrEqual(500);
+            expect(sleepDelays[0]).toBeLessThanOrEqual(750);
+            expect(sleepDelays[1]).toBeGreaterThanOrEqual(1000);
+            expect(sleepDelays[1]).toBeLessThanOrEqual(1250);
+
+            // Verify delays are different (jitter working)
+            expect(sleepDelays[0]).not.toBe(sleepDelays[1]);
         });
 
         it('should correctly chain summaries between chunks', async () => {
@@ -475,27 +535,25 @@ describe('Grader', () => {
         });
     });
 
-    describe('Modern JSON Parsing', () => {
-        it('should parse JSON from code blocks', async () => {
-            const jsonInCodeBlock = `\`\`\`json
-{
-  "summary": "Test Summary",
-  "observations": "Test Observations",
-  "score": 75,
-  "reasoning": "Test Reasoning",
-  "confidence": 0.8,
-  "outcomeAchievement": 70,
-  "processQuality": 80,
-  "efficiency": 75
-}
-\`\`\``;
+    describe('Structured Outputs', () => {
+        it('should handle structured JSON responses correctly', async () => {
+            const structuredEvaluation = JSON.stringify({
+                summary: "Test Summary",
+                observations: "Test Observations",
+                score: 75,
+                reasoning: "Test Reasoning",
+                confidence: 0.8,
+                outcomeAchievement: 70,
+                processQuality: 80,
+                efficiency: 75
+            });
 
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
                     choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: jsonInCodeBlock } }]
+                    choices: [{ message: { content: structuredEvaluation } }]
                 });
 
             const result = await grader.grade(metaData, sftData);
@@ -503,23 +561,62 @@ describe('Grader', () => {
             expect(result).not.toBeNull();
             expect(result?.score).toBe(75);
             expect(result?.confidence).toBe(0.8);
+            expect(result?.observations).toBe("Test Observations");
         });
 
-        it('should handle malformed JSON gracefully', async () => {
+        it('should handle parsing failures gracefully', async () => {
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
                     choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValue({
-                    choices: [{ message: { content: '{ invalid json }' } }]
+                    choices: [{ message: { content: 'malformed response' } }]
                 });
 
             const result = await grader.grade(metaData, sftData);
 
             expect(result).toBeNull();
             expect(testLogger.logs.some(log =>
-                log.level === 'error' && log.message === 'Failed to parse JSON response'
+                log.level === 'error' && log.message === 'Failed to parse structured response'
             )).toBe(true);
+        });
+
+        it('should use correct JSON schemas for API calls', async () => {
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                observations: "Final observations",
+                score: 90,
+                reasoning: "Final Reasoning",
+                confidence: 0.95,
+                outcomeAchievement: 85,
+                processQuality: 95,
+                efficiency: 90
+            });
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: finalEvaluation } }]
+                });
+
+            await grader.grade(metaData, sftData);
+
+            // Verify API calls used structured outputs
+            expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(2);
+
+            // First call (chunk) should use chunk schema
+            const firstCall = mockChatCompletionsCreate.mock.calls[0][0];
+            expect(firstCall.response_format.type).toBe("json_schema");
+            expect(firstCall.response_format.json_schema.name).toBe("chunk_evaluation");
+            expect(firstCall.response_format.json_schema.strict).toBe(true);
+
+            // Second call (final) should use final schema
+            const secondCall = mockChatCompletionsCreate.mock.calls[1][0];
+            expect(secondCall.response_format.type).toBe("json_schema");
+            expect(secondCall.response_format.json_schema.name).toBe("final_evaluation");
+            expect(secondCall.response_format.json_schema.strict).toBe(true);
         });
     });
 

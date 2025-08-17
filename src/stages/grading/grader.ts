@@ -1,5 +1,6 @@
 import { OpenAI } from 'openai';
 import path from 'path';
+import { sleep } from '../../shared/utils/sleep';
 
 export interface MetaData {
   readonly id: string;
@@ -102,6 +103,81 @@ interface FinalEvaluation {
   processQuality: number;
   efficiency: number;
 }
+
+// JSON Schema definitions for Structured Outputs
+const FINAL_EVALUATION_SCHEMA = {
+  name: "final_evaluation",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary", "observations", "score", "reasoning", "confidence", "outcomeAchievement", "processQuality", "efficiency"],
+    properties: {
+      summary: {
+        type: "string",
+        minLength: 1,
+        description: "Comprehensive bullet-point overview of all progress made across all chunks"
+      },
+      observations: {
+        type: "string",
+        minLength: 1,
+        description: "Brief, high-level bullet points (2-4 max) of key insights from evaluation. No detailed step-by-step reasoning."
+      },
+      score: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Overall score based on weighted evaluation criteria"
+      },
+      reasoning: {
+        type: "string",
+        minLength: 1,
+        description: "Clear justification for the final score based on the evaluation framework. Brief and high-level."
+      },
+      confidence: {
+        type: "number",
+        minimum: 0,
+        maximum: 1,
+        description: "Confidence level in the evaluation (0.0 to 1.0)"
+      },
+      outcomeAchievement: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Score for goal completion and objective fulfillment"
+      },
+      processQuality: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Score for problem-solving approach, error recovery, and adaptability"
+      },
+      efficiency: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Score for time management, direct paths, and resource utilization"
+      }
+    }
+  }
+} as const;
+
+const CHUNK_EVALUATION_SCHEMA = {
+  name: "chunk_evaluation",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary"],
+    properties: {
+      summary: {
+        type: "string",
+        minLength: 1,
+        description: "Comprehensive bullet-point overview of all progress made so far, combining previous summary with this chunk's accomplishments"
+      }
+    }
+  }
+} as const;
 
 export class Grader {
   private readonly client: OpenAI;
@@ -208,7 +284,7 @@ export class Grader {
     };
   }
 
-  private createSystemPrompt(meta: MetaData, prevSummary: string | null = null, isFinal: boolean = false): string {
+  public createSystemPrompt(meta: MetaData, prevSummary: string | null = null, isFinal: boolean = false): string {
     const basePrompt = `You are an advanced computer-use trajectory evaluator specialized in assessing human-computer interaction sequences. Your role is to provide nuanced, context-aware evaluation of user performance.
 
 ## TASK CONTEXT
@@ -270,53 +346,37 @@ Rate your confidence (0.0-1.0) based on:
   private getChunkInstructions(isFinal: boolean): string {
     if (isFinal) {
       return `## FINAL EVALUATION
-This is the final chunk. Provide a complete JSON evaluation following this exact format:
+This is the final chunk. Provide a complete evaluation using the structured JSON format.
 
-\`\`\`json
-{
-  "summary": "Comprehensive bullet-point overview of all progress made across all chunks",
-  "observations": "Brief, high-level bullet points (2-4 max) of key insights from your evaluation. Do not reveal detailed step-by-step reasoning.",
-  "score": 85,
-  "reasoning": "Clear justification for the final score based on the evaluation framework",
-  "confidence": 0.9,
-  "outcomeAchievement": 80,
-  "processQuality": 90,
-  "efficiency": 85
-}
-\`\`\`
+The response will be automatically formatted according to the JSON schema with these fields:
+- **summary**: Comprehensive bullet-point overview of all progress made across all chunks
+- **observations**: Brief, high-level bullet points (2-4 max) of key insights. No detailed step-by-step reasoning.
+- **score**: Overall score (0-100) based on weighted evaluation criteria
+- **reasoning**: Clear justification for the final score. Brief and high-level.
+- **confidence**: Confidence level (0.0-1.0) in your evaluation
+- **outcomeAchievement**: Score (0-100) for goal completion and objective fulfillment
+- **processQuality**: Score (0-100) for problem-solving approach, error recovery, and adaptability  
+- **efficiency**: Score (0-100) for time management, direct paths, and resource utilization
 
-## EXAMPLE EVALUATION
+## EXAMPLE EVALUATION CONTEXT
 
 **Task**: "Order a large pepperoni pizza for delivery"
 **Objectives**: ["Navigate to pizza website", "Select large pepperoni pizza", "Add to cart", "Complete checkout with delivery"]
 
 **Actions Observed**: User navigates to Domino's website, browses menu, adds large pepperoni to cart, but gets distracted and closes browser before checkout.
 
-\`\`\`json
-{
-  "summary": "• Successfully navigated to pizza ordering website\n• Located and selected correct pizza size and toppings\n• Added item to cart successfully\n• Failed to complete checkout process - session abandoned",
-  "observations": "• User demonstrated proficiency with e-commerce UI.\n• Session was abandoned at the critical checkout step.\n• Initial actions were efficient but the final goal was not achieved.",
-  "score": 45,
-  "reasoning": "While the user demonstrated competent navigation and selection skills (75% of objectives completed), the failure to complete checkout represents a critical gap in goal achievement. Outcome Achievement: 60% (3/4 objectives), Process Quality: 70% (good execution until abandonment), Efficiency: 80% (direct actions when engaged).",
-  "confidence": 0.95,
-  "outcomeAchievement": 60,
-  "processQuality": 70,
-  "efficiency": 80
-}
-\`\`\`
-
-**Your response must be valid JSON only, no additional text.**`;
+**Expected Response**: 
+- Summary would list each step taken
+- Observations would note UI proficiency but session abandonment  
+- Score around 45 (partial completion)
+- Reasoning would explain the 75% completion but critical checkout failure
+- Component scores: Outcome 60%, Process 70%, Efficiency 80%`;
     } else {
       return `## CHUNK EVALUATION
-Provide a JSON summary of progress combining previous summary (if any) with this chunk's accomplishments:
+Provide a JSON summary of progress combining previous summary (if any) with this chunk's accomplishments.
 
-\`\`\`json
-{
-  "summary": "Comprehensive bullet-point overview of all progress made so far"
-}
-\`\`\`
-
-**Your response must be valid JSON only, no additional text.**`;
+The response will be automatically formatted with a single field:
+- **summary**: Comprehensive bullet-point overview of all progress made so far`;
     }
   }
 
@@ -505,9 +565,12 @@ ${actionCount === 0 ?
       const response = await this.client.chat.completions.create({
         model: this.model,
         messages: formattedMessages,
-        max_tokens: 2000,
+        max_tokens: isFinal ? 1500 : 800,
         temperature: 0,
-        response_format: { type: "json_object" }
+        response_format: {
+          type: "json_schema",
+          json_schema: isFinal ? FINAL_EVALUATION_SCHEMA : CHUNK_EVALUATION_SCHEMA
+        }
       });
 
       return response.choices[0].message.content;
@@ -521,18 +584,13 @@ ${actionCount === 0 ?
     }
   }
 
-  private parseJsonResponse(text: string): any {
+  private parseStructuredResponse(text: string): any {
     try {
-      // Extract JSON from code blocks if present
-      const jsonMatch = text.match(/```json\s*({[\s\S]*?})\s*```/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[1]);
-      }
-
-      // Try parsing the entire response as JSON
+      // With Structured Outputs, the response is guaranteed to be valid JSON
       return JSON.parse(text.trim());
     } catch (error) {
-      this.logger.error('Failed to parse JSON response', error as Error, {
+      // This should rarely happen with Structured Outputs
+      this.logger.error('Failed to parse structured response', error as Error, {
         rawResponse: text?.substring(0, 200) + '...'
       });
       return null;
@@ -672,6 +730,11 @@ ${actionCount === 0 ?
           attempt: retries + 1
         });
         retries++;
+        if (retries < this.maxRetries) {
+          const delay = Math.min(8000, 500 * 2 ** (retries - 1)) + Math.random() * 250; // Exponential backoff with jitter
+          this.logger.info(`Retrying after ${delay.toFixed(0)}ms delay...`);
+          await sleep(delay);
+        }
         continue;
       }
 
@@ -691,6 +754,11 @@ ${actionCount === 0 ?
           evaluation: evaluation.substring(0, 200) + '...'
         });
         retries++;
+        if (retries < this.maxRetries) {
+          const delay = Math.min(8000, 500 * 2 ** (retries - 1)) + Math.random() * 250;
+          this.logger.info(`Retrying after ${delay.toFixed(0)}ms delay...`);
+          await sleep(delay);
+        }
       } else {
         const summary = this.parseChunkEvaluation(evaluation);
         if (summary) {
@@ -707,6 +775,11 @@ ${actionCount === 0 ?
           evaluation: evaluation.substring(0, 200) + '...'
         });
         retries++;
+        if (retries < this.maxRetries) {
+          const delay = Math.min(8000, 500 * 2 ** (retries - 1)) + Math.random() * 250;
+          this.logger.info(`Retrying after ${delay.toFixed(0)}ms delay...`);
+          await sleep(delay);
+        }
       }
     }
 
@@ -714,26 +787,18 @@ ${actionCount === 0 ?
   }
 
   private parseFinalEvaluation(evaluation: string): GradeResult | null {
-    const finalEval = this.parseJsonResponse(evaluation) as FinalEvaluation;
+    const finalEval = this.parseStructuredResponse(evaluation) as FinalEvaluation;
 
-    if (!finalEval || !finalEval.summary || (typeof finalEval.score !== 'number' && typeof finalEval.score !== 'string') || !finalEval.reasoning) {
+    if (!finalEval) {
       return null;
     }
 
-    // Validate score components
-    const outcomeScore = Math.max(0, Math.min(100, finalEval.outcomeAchievement || 0));
-    const processScore = Math.max(0, Math.min(100, finalEval.processQuality || 0));
-    const efficiencyScore = Math.max(0, Math.min(100, finalEval.efficiency || 0));
-    const confidence = Math.max(0, Math.min(1, finalEval.confidence || 0.5));
-
-    const score = parseInt(finalEval.score.toString(), 10);
-    if (isNaN(score) || score < 0 || score > 100) {
-      this.logger.error('Invalid score in evaluation', undefined, {
-        scoreStr: finalEval.score.toString(),
-        parsedScore: score
-      });
-      return null;
-    }
+    // With Structured Outputs, all required fields are guaranteed to be present and of correct type
+    // JSON Schema already enforces score/confidence bounds, but we still validate component scores
+    const outcomeScore = Math.max(0, Math.min(100, finalEval.outcomeAchievement));
+    const processScore = Math.max(0, Math.min(100, finalEval.processQuality));
+    const efficiencyScore = Math.max(0, Math.min(100, finalEval.efficiency));
+    const confidence = Math.max(0, Math.min(1, finalEval.confidence));
 
     // Calculate expected weighted score based on criteria
     const expectedScore = Math.round(
@@ -743,10 +808,10 @@ ${actionCount === 0 ?
     );
 
     // Log score validation (allow some tolerance for LLM rounding)
-    const scoreDifference = Math.abs(score - expectedScore);
+    const scoreDifference = Math.abs(finalEval.score - expectedScore);
     if (scoreDifference > 10) {
       this.logger.debug('Score calculation variance detected', {
-        providedScore: score,
+        providedScore: finalEval.score,
         expectedScore: expectedScore,
         difference: scoreDifference,
         components: {
@@ -759,8 +824,8 @@ ${actionCount === 0 ?
 
     return {
       summary: finalEval.summary,
-      observations: finalEval.observations || finalEval.reasoning,
-      score: score,
+      observations: finalEval.observations,
+      score: finalEval.score,
       reasoning: finalEval.reasoning,
       confidence: confidence,
       outcomeAchievement: outcomeScore,
@@ -770,7 +835,8 @@ ${actionCount === 0 ?
   }
 
   private parseChunkEvaluation(evaluation: string): string | null {
-    const chunkEval = this.parseJsonResponse(evaluation) as ChunkEvaluation;
+    const chunkEval = this.parseStructuredResponse(evaluation) as ChunkEvaluation;
+    // With Structured Outputs, summary is guaranteed to be present
     return chunkEval?.summary || null;
   }
 }
