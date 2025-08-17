@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, 4-pipeline-process-intermittently-hangs-during-grading]
   pull_request:
     branches: [main]
 
@@ -34,7 +34,6 @@ jobs:
   release:
     needs: [build]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
