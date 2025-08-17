@@ -153,6 +153,8 @@ if (values.grade) {
         console.log(`- Efficiency: ${result.efficiency}/100`);
         console.log('\nSummary:');
         console.log(result.summary);
+        console.log('\nObservations:');
+        console.log(result.observations);
         console.log('\nReasoning:');
         console.log(result.reasoning);
 
@@ -190,6 +192,8 @@ if (values.grade) {
         console.log(`- Efficiency: ${result.efficiency}/100`);
         console.log('\nSummary:');
         console.log(result.summary);
+        console.log('\nObservations:');
+        console.log(result.observations);
         console.log('\nReasoning:');
         console.log(result.reasoning);
 

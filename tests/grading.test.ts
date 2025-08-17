@@ -129,7 +129,7 @@ describe('Grader', () => {
         it('should process successfully on the first try', async () => {
             const finalEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Key observations",
                 score: 95,
                 reasoning: "Final Reasoning",
                 confidence: 0.9,
@@ -151,7 +151,7 @@ describe('Grader', () => {
 
             expect(result).toEqual({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Key observations",
                 score: 95,
                 reasoning: "Final Reasoning",
                 confidence: 0.9,
@@ -171,7 +171,7 @@ describe('Grader', () => {
         it('should succeed after one retry on a chunk', async () => {
             const finalEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Key observations after retry",
                 score: 90,
                 reasoning: "Final Reasoning",
                 confidence: 0.85,
@@ -226,7 +226,7 @@ describe('Grader', () => {
         it('should retry if the response format is invalid', async () => {
             const finalEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Observations after invalid format",
                 score: 90,
                 reasoning: "Final Reasoning",
                 confidence: 0.8,
@@ -295,7 +295,7 @@ describe('Grader', () => {
         it('should handle invalid score in evaluation', async () => {
             const invalidScoreEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Observations with invalid score",
                 score: "invalid",  // Invalid score type
                 reasoning: "Final Reasoning",
                 confidence: 0.7,
@@ -332,7 +332,7 @@ describe('Grader', () => {
 
             const finalEvaluation = JSON.stringify({
                 summary: "Final Summary",
-                analysis: "Final Analysis",
+                observations: "Observations from filtered messages",
                 score: 85,
                 reasoning: "Final Reasoning",
                 confidence: 0.9,
@@ -429,7 +429,7 @@ describe('Grader', () => {
             const jsonInCodeBlock = `\`\`\`json
 {
   "summary": "Test Summary",
-  "analysis": "Test Analysis",
+  "observations": "Test Observations",
   "score": 75,
   "reasoning": "Test Reasoning",
   "confidence": 0.8,
@@ -476,7 +476,7 @@ describe('Grader', () => {
         it('should detect score calculation variance', async () => {
             const inconsistentEvaluation = JSON.stringify({
                 summary: "Test Summary",
-                analysis: "Test Analysis",
+                observations: "Inconsistent observations",
                 score: 50, // Inconsistent with components
                 reasoning: "Test Reasoning",
                 confidence: 0.9,
@@ -508,7 +508,7 @@ describe('Grader', () => {
         it('should clamp component scores to valid ranges', async () => {
             const extremeEvaluation = JSON.stringify({
                 summary: "Test Summary",
-                analysis: "Test Analysis",
+                observations: "Extreme observations",
                 score: 75,
                 reasoning: "Test Reasoning",
                 confidence: 1.5, // > 1.0
@@ -549,7 +549,7 @@ describe('Grader', () => {
         it('should log grading process with metrics', async () => {
             const finalEvaluation = JSON.stringify({
                 summary: "Test Summary",
-                analysis: "Test Analysis",
+                observations: "Logged observations",
                 score: 85,
                 reasoning: "Test Reasoning",
                 confidence: 0.9,
