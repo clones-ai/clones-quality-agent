@@ -496,9 +496,14 @@ const FinalEvaluationSchema = z.object({
   observations: z.string()
     .min(1, "Observations must not be empty")
     .refine((obs) => {
+      // More flexible validation: accept bullet points, numbered lists, or line breaks
       const lines = obs.split('\n').filter(line => line.trim().length > 0);
-      return lines.length >= 2 && lines.length <= 6;
-    }, "Observations must contain between 2 and 6 non-empty lines"),
+      const bulletPoints = obs.split(/[•\-\*]/).filter(point => point.trim().length > 0);
+
+      // Accept either 2-6 lines OR 2-6 bullet points
+      return (lines.length >= 2 && lines.length <= 6) ||
+        (bulletPoints.length >= 2 && bulletPoints.length <= 6);
+    }, "Observations must contain between 2 and 6 non-empty lines or bullet points"),
   reasoning: z.string().min(1, "Reasoning must not be empty"),
   score: z.number().int().min(0).max(100),
   confidence: z.number().min(0).max(1),
@@ -1162,7 +1167,7 @@ export class Grader {
 
     const guidelines =
       isFinal
-        ? `Output must include: summary, observations (2–6 lines), reasoning (short), confidence [0..1], and component scores in [0..100].`
+        ? `Output must include: summary, observations (2–6 bullet points or lines, e.g., "• Point 1\n• Point 2"), reasoning (short), confidence [0..1], and component scores in [0..100].`
         : `Output must include: summary (one short paragraph).`;
 
     return [
