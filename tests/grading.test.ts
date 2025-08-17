@@ -579,6 +579,44 @@ describe('Grader', () => {
 
             evaluateChunkSpy.mockRestore();
         });
+
+        it('should use low detail for image optimization', async () => {
+            const imageMessage: readonly Message[] = [
+                { role: 'user', content: { type: 'image', data: 'base64imagedata' } },
+                { role: 'user', content: 'click(100,200)' }
+            ];
+
+            const finalEvaluation = JSON.stringify({
+                summary: "Image optimization test",
+                observations: "Low detail optimization working",
+                score: 80,
+                reasoning: "Test reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 75,
+                processQuality: 85,
+                efficiency: 80
+            });
+
+            mockChatCompletionsCreate.mockResolvedValue({
+                choices: [{ message: { content: finalEvaluation } }]
+            });
+
+            await grader.grade(metaData, imageMessage);
+
+            // Verify the API call used low detail for images
+            expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
+            const apiCall = mockChatCompletionsCreate.mock.calls[0][0];
+
+            // Find the message with image content
+            const messageWithImage = apiCall.messages.find((msg: any) =>
+                Array.isArray(msg.content) &&
+                msg.content.some((part: any) => part.type === 'image_url')
+            );
+
+            expect(messageWithImage).toBeDefined();
+            const imageContent = messageWithImage.content.find((part: any) => part.type === 'image_url');
+            expect(imageContent.image_url.detail).toBe('low');
+        });
     });
 
     describe('Evaluation Criteria Management', () => {
@@ -688,8 +726,33 @@ describe('Grader', () => {
 
             expect(result).toBeNull();
             expect(testLogger.logs.some(log =>
-                log.level === 'error' && log.message === 'Failed to parse structured response'
+                log.level === 'error' && log.message === 'Failed to parse structured response even after repair attempt'
             )).toBe(true);
+        });
+
+        it('should repair truncated JSON responses', async () => {
+            // Test with a simple case: missing closing brace
+            const truncatedJson = '{"summary": "Test Summary", "observations": "Test obs", "score": 85, "reasoning": "Test reasoning", "confidence": 0.9, "outcomeAchievement": 80, "processQuality": 90, "efficiency": 85';
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: truncatedJson } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            // Should successfully repair and parse
+            expect(result).not.toBeNull();
+            expect(result?.summary).toBe("Test Summary");
+
+            // Check that repair was attempted (debug log should be present)
+            const hasDebugLog = testLogger.logs.some(log =>
+                log.level === 'debug' && log.message === 'Attempting JSON repair for potentially truncated response'
+            );
+            expect(hasDebugLog).toBe(true);
         });
 
         it('should use correct JSON schemas for API calls', async () => {
