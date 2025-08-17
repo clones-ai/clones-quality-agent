@@ -391,12 +391,13 @@ The response will be automatically formatted with a single field:
     const filteredMessages = messages.filter((msg): msg is Message => {
       if (typeof msg.content === 'string') {
         let content = msg.content;
-        // Remove python code block if present
-        if (content.startsWith('```python\n')) {
-          content = content.slice(10, -4); // Remove ```python\n and \n```
-        }
+
+        // Extract content from code blocks using robust regex
+        const codeBlockMatch = content.match(/^```[a-z]*\r?\n([\s\S]*?)\r?\n```$/i);
+        const innerContent = codeBlockMatch ? codeBlockMatch[1] : content;
+
         // Filter out if it starts with scroll
-        return !content.startsWith('scroll(');
+        return !innerContent.trim().startsWith('scroll(');
       }
       // Keep all image messages
       return true;
