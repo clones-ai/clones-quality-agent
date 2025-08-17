@@ -104,10 +104,8 @@ async function runTests() {
     console.log('🎉 All grading tests completed successfully!');
 }
 
-// Check if we're being run directly
-if (import.meta.main) {
-    runTests().catch((error) => {
-        console.error('❌ Test runner failed:', error);
-        process.exit(1);
-    });
-}
+// Run tests - this script is designed to be executed directly
+runTests().catch((error) => {
+    console.error('❌ Test runner failed:', error);
+    process.exit(1);
+});
