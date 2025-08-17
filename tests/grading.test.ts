@@ -374,9 +374,9 @@ describe('Grader', () => {
 
             // Verify exponential backoff: 500 * 2^(retries-1) + jitter
             // First retry: 500 * 2^0 = 500ms base + jitter (0-250ms) = 500-750ms
-            // Second retry: 500 * 2^1 = 1000ms base + jitter (0-250ms) = 1000-1250ms
             expect(sleepDelays[0]).toBeGreaterThanOrEqual(500);
             expect(sleepDelays[0]).toBeLessThanOrEqual(750);
+            // Second retry: 500 * 2^1 = 1000ms base + jitter (0-250ms) = 1000-1250ms
             expect(sleepDelays[1]).toBeGreaterThanOrEqual(1000);
             expect(sleepDelays[1]).toBeLessThanOrEqual(1250);
 
@@ -386,7 +386,6 @@ describe('Grader', () => {
 
         it('should correctly chain summaries between chunks', async () => {
             const chunk1Summary = "Chunk 1 summary.";
-            const chunk2Summary = "Chunk 2 summary, building on chunk 1.";
             const finalEvaluation = JSON.stringify({
                 summary: "Final Summary",
                 observations: "Final observations",
@@ -405,34 +404,37 @@ describe('Grader', () => {
                 { role: 'user', content: 'click(2,2)' },
             ];
 
+            // More advanced mock to check for prevSummary and simulate aggregation
             mockChatCompletionsCreate
-                .mockResolvedValueOnce({
-                    choices: [{ message: { content: JSON.stringify({ summary: chunk1Summary }) } }]
+                .mockImplementationOnce(async (args: any) => {
+                    // First chunk should not have a summary
+                    expect(args.messages[0].content).not.toContain('## PREVIOUS PROGRESS');
+                    return { choices: [{ message: { content: JSON.stringify({ summary: chunk1Summary }) } }] };
                 })
-                .mockResolvedValueOnce({
-                    choices: [{ message: { content: JSON.stringify({ summary: chunk2Summary }) } }]
+                .mockImplementationOnce(async (args: any) => {
+                    // Second chunk must have the first chunk's summary
+                    expect(args.messages[0].content).toContain('## PREVIOUS PROGRESS');
+                    expect(args.messages[0].content).toContain(chunk1Summary);
+                    // Simulate aggregation
+                    const aggregatedSummary = `${chunk1Summary} And now, chunk 2 summary.`;
+                    return { choices: [{ message: { content: JSON.stringify({ summary: aggregatedSummary }) } }] };
                 })
-                .mockResolvedValueOnce({
-                    choices: [{ message: { content: finalEvaluation } }]
+                .mockImplementationOnce(async (args: any) => {
+                    const expectedPrevSummary = `${chunk1Summary} And now, chunk 2 summary.`;
+                    // Final chunk must have the aggregated summary from the second chunk
+                    expect(args.messages[0].content).toContain('## PREVIOUS PROGRESS');
+                    expect(args.messages[0].content).toContain(expectedPrevSummary);
+                    return { choices: [{ message: { content: finalEvaluation } }] };
                 });
-
-            // Spy on createSystemPrompt to check its input
-            const createSystemPromptSpy = spyOn(grader, 'createSystemPrompt');
 
             const result = await grader.grade(metaData, multiChunkSftData);
 
             expect(result).not.toBeNull();
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
 
-            // Check that prevSummary is passed correctly
-            // First call, no prevSummary
-            expect(createSystemPromptSpy.mock.calls[0][1]).toBeNull();
-            // Second call, receives summary from the first
-            expect(createSystemPromptSpy.mock.calls[1][1]).toBe(chunk1Summary);
-            // Third call, receives summary from the second
-            expect(createSystemPromptSpy.mock.calls[2][1]).toBe(chunk2Summary);
-
-            createSystemPromptSpy.mockRestore();
+            // Verify that the mock logic was executed (i.e., the expects inside the mock didn't fail)
+            // The final result check confirms the chain completed
+            expect(result?.summary).toBe("Final Summary");
         });
     });
 

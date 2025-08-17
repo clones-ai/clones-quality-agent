@@ -125,10 +125,12 @@ console.log(`Starting processing of ${sessions.length} sessions...`);
 if (values.grade) {
   // Grading mode
   const productionLogger = new ProductionLogger();
+  const parsed = Number(values['chunk-size']);
+  const safeChunk = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   const grader = new Grader({
     apiKey: process.env.OPENAI_API_KEY!,
-    chunkSize: parseInt(values['chunk-size']),
-    timeout: 60 * 1000,
+    chunkSize: safeChunk,
+    timeout: 60_000,
     maxRetries: 3
   }, productionLogger);
 
