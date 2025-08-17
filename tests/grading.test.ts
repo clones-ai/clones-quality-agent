@@ -22,7 +22,7 @@ mock.module('openai', () => ({
 }));
 
 // Mock the sleep function
-const mockSleep = mock(() => Promise.resolve());
+const mockSleep = mock((ms: number) => Promise.resolve());
 mock.module('../src/shared/utils/sleep', () => ({
     sleep: mockSleep,
 }));
@@ -159,7 +159,8 @@ describe('Grader', () => {
             expect(result).toEqual({
                 summary: "Final Summary",
                 observations: "Key observations",
-                score: 95,
+                score: 91, // Calculated score: 90*0.5 + 95*0.3 + 85*0.2 = 45 + 28.5 + 17 = 90.5 ≈ 91
+                modelScoreRaw: 95,
                 reasoning: "Final Reasoning",
                 confidence: 0.9,
                 outcomeAchievement: 90,
@@ -199,7 +200,8 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(90);
+            expect(result?.score).toBe(86); // Calculated: 85*0.5 + 90*0.3 + 80*0.2 = 42.5 + 27 + 16 = 85.5 ≈ 86
+            expect(result?.modelScoreRaw).toBe(90);
 
             // Called 3 times: chunk 1 (1), chunk 2 (2 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
@@ -258,7 +260,8 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(90);
+            expect(result?.score).toBe(85); // Calculated: 85*0.5 + 88*0.3 + 82*0.2 = 42.5 + 26.4 + 16.4 = 85.3 ≈ 85
+            expect(result?.modelScoreRaw).toBe(90);
 
             // Called 3 times: chunk 1 (1), chunk 2 (2 attempts)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
@@ -326,7 +329,8 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(0);
+            expect(result?.score).toBe(60); // Calculated: 100*0.5 + 0*0.3 + 50*0.2 = 50 + 0 + 10 = 60
+            expect(result?.modelScoreRaw).toBe(0);
             expect(result?.confidence).toBe(0.0);
             expect(result?.outcomeAchievement).toBe(100);
             expect(result?.processQuality).toBe(0);
@@ -459,7 +463,8 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, messagesWithScroll);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(85);
+            expect(result?.score).toBe(84); // Calculated: 80*0.5 + 85*0.3 + 90*0.2 = 40 + 25.5 + 18 = 83.5 ≈ 84
+            expect(result?.modelScoreRaw).toBe(85);
 
             // Should only process non-scroll messages (2 messages = 1 chunk with chunkSize 2)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
@@ -559,7 +564,8 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(75);
+            expect(result?.score).toBe(74); // Calculated: 70*0.5 + 80*0.3 + 75*0.2 = 35 + 24 + 15 = 74
+            expect(result?.modelScoreRaw).toBe(75);
             expect(result?.confidence).toBe(0.8);
             expect(result?.observations).toBe("Test Observations");
         });
@@ -621,6 +627,59 @@ describe('Grader', () => {
     });
 
     describe('Score Validation and Variance Detection', () => {
+        it('should calculate deterministic scores from components', async () => {
+            const testCases = [
+                {
+                    name: "Perfect scores",
+                    components: { outcome: 100, process: 100, efficiency: 100 },
+                    expectedScore: 100 // 100*0.5 + 100*0.3 + 100*0.2 = 100
+                },
+                {
+                    name: "Mixed scores",
+                    components: { outcome: 80, process: 60, efficiency: 40 },
+                    expectedScore: 66 // 80*0.5 + 60*0.3 + 40*0.2 = 40 + 18 + 8 = 66
+                },
+                {
+                    name: "Edge case with decimals",
+                    components: { outcome: 83, process: 77, efficiency: 91 },
+                    expectedScore: 83 // 83*0.5 + 77*0.3 + 91*0.2 = 41.5 + 23.1 + 18.2 = 82.8 ≈ 83
+                }
+            ];
+
+            for (const testCase of testCases) {
+                const evaluation = JSON.stringify({
+                    summary: `Test Summary for ${testCase.name}`,
+                    observations: `Test observations for ${testCase.name}`,
+                    score: 999, // Intentionally wrong to test that calculated score is used
+                    reasoning: "Test Reasoning",
+                    confidence: 0.9,
+                    outcomeAchievement: testCase.components.outcome,
+                    processQuality: testCase.components.process,
+                    efficiency: testCase.components.efficiency
+                });
+
+                mockChatCompletionsCreate
+                    .mockResolvedValueOnce({
+                        choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                    })
+                    .mockResolvedValueOnce({
+                        choices: [{ message: { content: evaluation } }]
+                    });
+
+                const result = await grader.grade(metaData, sftData);
+
+                expect(result).not.toBeNull();
+                expect(result?.score).toBe(testCase.expectedScore);
+                expect(result?.modelScoreRaw).toBe(999);
+                expect(result?.outcomeAchievement).toBe(testCase.components.outcome);
+                expect(result?.processQuality).toBe(testCase.components.process);
+                expect(result?.efficiency).toBe(testCase.components.efficiency);
+
+                // Reset mocks for next iteration
+                mockChatCompletionsCreate.mockClear();
+            }
+        });
+
         it('should detect score calculation variance', async () => {
             const inconsistentEvaluation = JSON.stringify({
                 summary: "Test Summary",
@@ -645,11 +704,12 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).not.toBeNull();
-            expect(result?.score).toBe(50); // Uses provided score despite variance
+            expect(result?.score).toBe(83); // Uses calculated score: 90*0.5 + 80*0.3 + 70*0.2 = 45 + 24 + 14 = 83
+            expect(result?.modelScoreRaw).toBe(50); // Original model score preserved for diagnostics
 
-            // Check variance logging
+            // Check score comparison logging (now logs all differences > 0)
             expect(testLogger.logs.some(log =>
-                log.level === 'debug' && log.message === 'Score calculation variance detected'
+                log.level === 'debug' && log.message === 'Score calculation comparison'
             )).toBe(true);
         });
 
