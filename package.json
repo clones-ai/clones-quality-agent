@@ -27,7 +27,8 @@
     "openai": "^5.12.2",
     "sharp": "^0.34.3",
     "tesseract.js": "^6.0.1",
-    "tiktoken": "^1.0.22"
+    "tiktoken": "^1.0.22",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
     "@types/bun": "latest",
