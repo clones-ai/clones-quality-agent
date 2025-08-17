@@ -260,11 +260,11 @@ Rate your confidence (0.0-1.0) based on:
 - **Sequence completeness**: Did you see the full interaction?
 - **Ambiguity factors**: Were there unclear or missing elements?`;
 
-    if (prevSummary) {
-      return basePrompt + `\n\n## PREVIOUS PROGRESS\n${prevSummary}\n\n${this.getChunkInstructions(isFinal)}`;
-    }
+    const withPrev = prevSummary
+      ? `${basePrompt}\n\n## PREVIOUS PROGRESS\n${prevSummary.trim()}`
+      : basePrompt;
 
-    return basePrompt + `\n\n${this.getChunkInstructions(isFinal)}`;
+    return withPrev + `\n\n${this.getChunkInstructions(isFinal)}`;
   }
 
   private getChunkInstructions(isFinal: boolean): string {

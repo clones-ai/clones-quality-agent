@@ -319,6 +319,57 @@ describe('Grader', () => {
                 log.level === 'error' && log.message === 'Invalid score in evaluation'
             )).toBe(true);
         });
+
+        it('should correctly chain summaries between chunks', async () => {
+            const chunk1Summary = "Chunk 1 summary.";
+            const chunk2Summary = "Chunk 2 summary, building on chunk 1.";
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                observations: "Final observations",
+                score: 95,
+                reasoning: "Final Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 90,
+                processQuality: 95,
+                efficiency: 85
+            });
+
+            // Create a larger dataset to force 3 chunks with chunkSize = 2
+            const multiChunkSftData: readonly Message[] = [
+                ...sftData,
+                { role: 'user', content: { type: 'image', data: 'img3' } },
+                { role: 'user', content: 'click(2,2)' },
+            ];
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: chunk1Summary }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: chunk2Summary }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: finalEvaluation } }]
+                });
+
+            // Spy on createSystemPrompt to check its input
+            const createSystemPromptSpy = spyOn(grader, 'createSystemPrompt');
+
+            const result = await grader.grade(metaData, multiChunkSftData);
+
+            expect(result).not.toBeNull();
+            expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(3);
+
+            // Check that prevSummary is passed correctly
+            // First call, no prevSummary
+            expect(createSystemPromptSpy.mock.calls[0][1]).toBeNull();
+            // Second call, receives summary from the first
+            expect(createSystemPromptSpy.mock.calls[1][1]).toBe(chunk1Summary);
+            // Third call, receives summary from the second
+            expect(createSystemPromptSpy.mock.calls[2][1]).toBe(chunk2Summary);
+
+            createSystemPromptSpy.mockRestore();
+        });
     });
 
     describe('Message filtering', () => {
