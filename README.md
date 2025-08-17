@@ -84,7 +84,7 @@ The grader evaluates a session using structured JSON outputs and a deterministic
 ### Key properties
 
 * **Structured outputs**: JSON Schema strict mode for guaranteed fields and types.
-* **Multi-layer validation**: Uses SDK `message.parsed` when available, plus local Zod validation with business rules (2-6 observation lines).
+* **Multi-layer validation**: Uses SDK `message.parsed` when available, plus local Zod validation with business rules (2-6 observation points, accepting both line breaks and bullet points).
 * **Deterministic scoring**: Final `score` is computed in code from component scores and normalized weights, with single rounding.
 * **Reproducible results**: Fixed seed (default 42), temperature=0, top_p=1, and zero penalties ensure identical outputs.
 * **Smart error handling**: Typed errors (Timeout, Permanent, Transient) with intelligent retry logic that respects Retry-After headers.
@@ -119,7 +119,7 @@ For each session, `scores.json`:
 ```json
 {
   "summary": "One-paragraph outcome summary.",
-  "observations": "• High-level bullets (2–6 lines)\n• No chain-of-thought",
+  "observations": "• High-level bullets (2–6 points)\n• No chain-of-thought",
   "reasoning": "Short final rationale.",
   "score": 73,
   "confidence": 0.90,
