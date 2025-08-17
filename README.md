@@ -84,9 +84,15 @@ The grader evaluates a session using structured JSON outputs and a deterministic
 ### Key properties
 
 * **Structured outputs**: JSON Schema strict mode for guaranteed fields and types.
-* **Deterministic scoring**: Final `score` is computed in code from component scores and configured weights.
+* **Multi-layer validation**: Uses SDK `message.parsed` when available, plus local Zod validation with business rules (2-6 observation lines).
+* **Deterministic scoring**: Final `score` is computed in code from component scores and normalized weights, with single rounding.
+* **Reproducible results**: Fixed seed (default 42), temperature=0, top_p=1, and zero penalties ensure identical outputs.
+* **Smart error handling**: Typed errors (Timeout, Permanent, Transient) with intelligent retry logic that respects Retry-After headers.
+* **Concurrent processing**: Sessions processed in parallel with built-in rate limiter (10 tokens, 2/sec refill by default).
+* **Sequential chunks**: Within each session, chunks are processed sequentially to maintain summary dependencies.
 * **Timeouts & retries**: Per-request timeout (default 60s) and exponential backoff with jitter.
 * **Robust parsing**: Safe JSON extraction (fenced blocks or balanced braces) and clear error messages.
+* **Observability**: Comprehensive metrics collection (tokens, timing, retries) with configurable hooks for monitoring.
 * **No chain-of-thought**: Concise observations and a short final rationale only.
 * **Cost-aware multimodal**: Low-detail images, text truncation, and image-per-chunk limits.
 
@@ -133,14 +139,33 @@ For each session, `scores.json`:
 ## Programmatic use
 
 ```ts
-import { Grader, type Chunk, type MetaData } from "./src/stages/grading/grader";
+import { 
+  Grader, 
+  type Chunk, 
+  type MetaData,
+  TimeoutError,
+  PermanentError, 
+  TransientError
+} from "./src/stages/grading/grader";
 
 const grader = new Grader({
   apiKey: process.env.OPENAI_API_KEY!,
   chunkSize: 4,
   model: "gpt-4o",
   timeout: 60_000,
-  maxRetries: 3
+  maxRetries: 3,
+  seed: 42,  // Fixed seed for deterministic output
+  rateLimiter: {
+    maxTokens: 10,    // Token bucket size
+    refillRate: 2     // Tokens per second refill rate
+  },
+  onMetrics: (metrics) => {
+    // Custom metrics handler for observability
+    console.log(`Request ${metrics.responseId}: ${metrics.usage?.totalTokens} tokens, ${metrics.timing.durationMs}ms`);
+    if (metrics.outcome !== 'success') {
+      console.warn(`Request failed: ${metrics.error?.message}`);
+    }
+  }
 });
 
 const meta: MetaData = {
@@ -164,10 +189,91 @@ function sftToChunks(messages: any[], chunkSize = 4): Chunk[] {
   return chunks;
 }
 
-const chunks = sftToChunks(messages, 4);
-const result = await grader.evaluateSession(chunks, meta);
-console.log(result.score, result.summary);
+try {
+  const chunks = sftToChunks(messages, 4);
+  const result = await grader.evaluateSession(chunks, meta);
+  console.log(result.score, result.summary);
+} catch (error) {
+  if (error instanceof PermanentError) {
+    console.error("Permanent error (will not retry):", error.message);
+  } else if (error instanceof TimeoutError) {
+    console.error("Request timed out:", error.message);
+  } else if (error instanceof TransientError) {
+    console.error("Transient error (retries exhausted):", error.message);
+  }
+}
+
+// Process multiple sessions concurrently
+const sessions = [
+  { id: "session_1", messages: messages1 },
+  { id: "session_2", messages: messages2 },
+  { id: "session_3", messages: messages3 }
+];
+
+const promises = sessions.map(session => 
+  grader.evaluateSession(
+    sftToChunks(session.messages, 4),
+    { sessionId: session.id, platform: "web" }
+  )
+);
+
+const results = await Promise.allSettled(promises);
+console.log(`Processed ${results.length} sessions concurrently`);
+
+// Check rate limiter status
+const stats = grader.getRateLimiterStats();
+console.log(`Rate limiter: ${stats.tokens} tokens, ${stats.queueLength} queued`);
 ```
+
+### Observability and metrics
+
+The grader provides comprehensive metrics for monitoring and debugging:
+
+```ts
+import { type RequestMetrics } from "./src/stages/grading/grader";
+
+const grader = new Grader({
+  apiKey: process.env.OPENAI_API_KEY!,
+  onMetrics: (metrics: RequestMetrics) => {
+    // OpenAI response tracking
+    console.log(`Response ID: ${metrics.responseId}`);
+    console.log(`Model fingerprint: ${metrics.systemFingerprint}`);
+    
+    // Token usage
+    if (metrics.usage) {
+      console.log(`Tokens: ${metrics.usage.promptTokens} prompt + ${metrics.usage.completionTokens} completion = ${metrics.usage.totalTokens} total`);
+    }
+    
+    // Timing and retry information
+    console.log(`Duration: ${metrics.timing.durationMs}ms with ${metrics.timing.retryCount} retries`);
+    if (metrics.timing.retryDelays.length > 0) {
+      console.log(`Retry delays: ${metrics.timing.retryDelays.join(', ')}ms`);
+    }
+    
+    // Request context
+    console.log(`Session: ${metrics.context.sessionId}, Model: ${metrics.context.model}`);
+    console.log(`Type: ${metrics.context.isFinal ? 'Final' : `Chunk ${metrics.context.chunkIndex}/${metrics.context.totalChunks}`}`);
+    
+    // Outcome and error handling
+    console.log(`Outcome: ${metrics.outcome}`);
+    if (metrics.error) {
+      console.error(`Error: ${metrics.error.type} - ${metrics.error.message} (Status: ${metrics.error.statusCode})`);
+    }
+    
+    // Send to your monitoring system
+    // sendToDatadog(metrics);
+    // sendToPrometheus(metrics);
+  }
+});
+```
+
+The metrics hook is called for every API request with detailed information about:
+- **OpenAI metadata**: `response.id`, `system_fingerprint` for tracing
+- **Token usage**: Prompt, completion, and total token counts
+- **Timing**: Start/end times, duration, retry count and delays
+- **Context**: Session ID, chunk information, model used
+- **Outcome**: Success, permanent error, transient error, or timeout
+- **Error details**: Type, message, and HTTP status code when applicable
 
 ### Adjusting evaluation weights
 
@@ -215,7 +321,15 @@ bun run test:grading:integration
 
 ## Security and reliability notes
 
-* **Logging hygiene**: Default logs avoid printing sensitive data and truncate large payloads.
+* **Input sanitization**: All user text and `cropInfo` are sanitized to remove control characters and potential injection patterns.
+* **Comprehensive logging security**: Enhanced redaction removes sensitive data from logs including:
+  - **Email addresses**: `user@example.com` → `[EMAIL]`
+  - **API keys**: OpenAI (`sk-...`), AWS (`AKIA...`), Google (`AIza...`), GitHub (`ghp_...`), Stripe (`sk_live_...`)
+  - **OAuth tokens**: Bearer tokens, JWT tokens, Google OAuth (`ya29...`)
+  - **Private keys**: PEM, SSH, OpenSSH private keys
+  - **Database URLs**: Connection strings with credentials
+  - **Base64 data**: Images and potential sensitive encoded content
+  - **IP addresses**: Network information redaction
 * **Input guards**: Text length is truncated; images per chunk are capped; numeric options are normalized.
 * **Failure handling**: Timeouts, retries with backoff, and explicit JSON parse errors make failure modes predictable.
 
@@ -230,5 +344,3 @@ bun run test:grading:integration
 
 ---
 
-If you want a short badge-style summary for the repo description, use:
-“End-to-end Clones pipeline with structured LLM grading, deterministic scoring, and cost-aware multimodal support.”

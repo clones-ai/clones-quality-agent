@@ -147,8 +147,108 @@ const pipeline = new Pipeline({
 
 console.log(`Starting processing of ${sessions.length} sessions...`);
 
+// Function to process a single session
+async function processSession(
+  session: string,
+  grader: Grader,
+  pipeline: Pipeline,
+  dataDir: string,
+  outDir: string,
+  format: string,
+  chunkSize: number
+): Promise<void> {
+  console.log(`\nProcessing session: ${session}`);
+  const sftPath = path.join(dataDir, session, 'sft.json');
+  const metaPath = path.join(dataDir, session, 'meta.json');
+
+  // Check if sft.json exists
+  try {
+    await Bun.file(sftPath).json();
+
+    // Grade existing sft.json
+    console.log('Found existing sft.json, grading...');
+    const sftMessages = await Bun.file(sftPath).json();
+    let metaJson: any = {};
+    try { metaJson = await Bun.file(metaPath).json(); } catch { }
+    const meta: MetaData = {
+      sessionId: session,
+      platform: (format === 'desktop' ? 'desktop' : 'web'),
+      taskDescription: metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
+    };
+    const chunks = sftToChunks(sftMessages, chunkSize);
+    const result = await grader.evaluateSession(chunks, meta);
+    if (result) {
+      console.log('\nGrading complete!');
+      console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+      console.log('\nScore Breakdown:');
+      console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
+      console.log(`- Process Quality: ${result.processQuality}/100`);
+      console.log(`- Efficiency: ${result.efficiency}/100`);
+      console.log('\nSummary:');
+      console.log(result.summary);
+      console.log('\nObservations:');
+      console.log(result.observations);
+      console.log('\nReasoning:');
+      console.log(result.reasoning);
+
+      // Write scores to file
+      await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
+    } else {
+      console.error('Failed to grade session');
+    }
+  } catch (error) {
+    // Run normal pipeline if sft.json doesn't exist
+    console.log('No sft.json found, running pipeline...');
+    const results = await pipeline.process(session);
+    const html = visualizeEvents(results);
+    await Bun.write(path.join(outDir, session, `results.html`), html);
+    await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
+
+    // Format messages
+    const formatter = new MessageFormatter();
+    const messages = await formatter.process(results);
+
+    // Write formatted messages
+    const msg_html = visualizeMessages(messages);
+    await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
+    await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
+
+    // Now grade the newly created sft.json
+    console.log('\nGrading new sft.json...');
+    const sftMessages2 = await Bun.file(sftPath).json();
+    let metaJson2: any = {};
+    try { metaJson2 = await Bun.file(metaPath).json(); } catch { }
+    const meta2: MetaData = {
+      sessionId: session,
+      platform: (format === 'desktop' ? 'desktop' : 'web'),
+      taskDescription: metaJson2?.quest?.title ?? metaJson2?.title ?? metaJson2?.description ?? undefined
+    };
+    const chunks2 = sftToChunks(sftMessages2, chunkSize);
+    const result = await grader.evaluateSession(chunks2, meta2);
+    if (result) {
+      console.log('\nGrading complete!');
+      console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+      console.log('\nScore Breakdown:');
+      console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
+      console.log(`- Process Quality: ${result.processQuality}/100`);
+      console.log(`- Efficiency: ${result.efficiency}/100`);
+      console.log('\nSummary:');
+      console.log(result.summary);
+      console.log('\nObservations:');
+      console.log(result.observations);
+      console.log('\nReasoning:');
+      console.log(result.reasoning);
+
+      // Write scores to file
+      await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
+    } else {
+      console.error('Failed to grade session');
+    }
+  }
+}
+
 if (values.grade) {
-  // Grading mode
+  // Grading mode with parallelization
   const productionLogger = new ProductionLogger();
   const parsed = Number(values['chunk-size']);
   const safeChunk = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -156,107 +256,38 @@ if (values.grade) {
     apiKey: process.env.OPENAI_API_KEY!,
     chunkSize: safeChunk,
     timeout: 60_000,
-    maxRetries: 3
+    maxRetries: 3,
+    seed: 42,
+    rateLimiter: {
+      maxTokens: 10,
+      refillRate: 2
+    }
   }, productionLogger);
 
-  for (const session of sessions) {
-    console.log(`\nProcessing session: ${session}`);
-    const sftPath = path.join(dataDir, session, 'sft.json');
-    const metaPath = path.join(dataDir, session, 'meta.json');
+  console.log(`Starting parallel processing of ${sessions.length} sessions...`);
 
-    // Check if sft.json exists
-    try {
-      await Bun.file(sftPath).json();
+  // Process sessions in parallel with rate limiting handled by the grader
+  const sessionPromises = sessions.map(session =>
+    processSession(session, grader, pipeline, dataDir, outDir, format, safeChunk || 4)
+      .catch(error => {
+        console.error(`Error processing session ${session}:`, error.message);
+        return null; // Don't fail the entire batch
+      })
+  );
 
-      // Grade existing sft.json
-      // Grade using the new Grader API
-      console.log('Found existing sft.json, grading...');
-      const sftMessages = await Bun.file(sftPath).json();
-      let metaJson: any = {};
-      try { metaJson = await Bun.file(metaPath).json(); } catch { }
-      const meta: MetaData = {
-        sessionId: session,
-        platform: (format === 'desktop' ? 'desktop' : 'web'),
-        taskDescription: metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
-      };
-      const chunkSize = Number.isFinite(Number(values['chunk-size'])) && Number(values['chunk-size']) > 0
-        ? Number(values['chunk-size']) : 4;
-      const chunks = sftToChunks(sftMessages, chunkSize);
-      const result = await grader.evaluateSession(chunks, meta);
-      if (result) {
-        console.log('\nGrading complete!');
-        console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-        console.log('\nScore Breakdown:');
-        console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
-        console.log(`- Process Quality: ${result.processQuality}/100`);
-        console.log(`- Efficiency: ${result.efficiency}/100`);
-        console.log('\nSummary:');
-        console.log(result.summary);
-        console.log('\nObservations:');
-        console.log(result.observations);
-        console.log('\nReasoning:');
-        console.log(result.reasoning);
+  const results = await Promise.allSettled(sessionPromises);
 
-        // Write scores to file
-        await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
-      } else {
-        console.error('Failed to grade session');
-      }
-    } catch (error) {
-      // Run normal pipeline if sft.json doesn't exist
-      console.log('No sft.json found, running pipeline...');
-      const results = await pipeline.process(session);
-      const html = visualizeEvents(results);
-      await Bun.write(path.join(outDir, session, `results.html`), html);
-      await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
+  // Log rate limiter stats
+  const stats = grader.getRateLimiterStats();
+  console.log(`\nRate limiter stats: ${stats.tokens} tokens remaining, ${stats.queueLength} requests queued`);
 
-      // Format messages
-      const formatter = new MessageFormatter();
-      const messages = await formatter.process(results);
+  // Report results
+  const successful = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  console.log(`\nCompleted: ${successful} successful, ${failed} failed out of ${sessions.length} sessions`);
 
-      // Write formatted messages
-      const msg_html = visualizeMessages(messages);
-      await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
-      await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
-
-
-      // Now grade the newly created sft.json with the new API
-      console.log('\nGrading new sft.json...');
-      const sftMessages2 = await Bun.file(sftPath).json();
-      let metaJson2: any = {};
-      try { metaJson2 = await Bun.file(metaPath).json(); } catch { }
-      const meta2: MetaData = {
-        sessionId: session,
-        platform: (format === 'desktop' ? 'desktop' : 'web'),
-        taskDescription: metaJson2?.quest?.title ?? metaJson2?.title ?? metaJson2?.description ?? undefined
-      };
-      const chunkSize2 = Number.isFinite(Number(values['chunk-size'])) && Number(values['chunk-size']) > 0
-        ? Number(values['chunk-size']) : 4;
-      const chunks2 = sftToChunks(sftMessages2, chunkSize2);
-      const result = await grader.evaluateSession(chunks2, meta2);
-      if (result) {
-        console.log('\nGrading complete!');
-        console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-        console.log('\nScore Breakdown:');
-        console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
-        console.log(`- Process Quality: ${result.processQuality}/100`);
-        console.log(`- Efficiency: ${result.efficiency}/100`);
-        console.log('\nSummary:');
-        console.log(result.summary);
-        console.log('\nObservations:');
-        console.log(result.observations);
-        console.log('\nReasoning:');
-        console.log(result.reasoning);
-
-        // Write scores to file
-        await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
-      } else {
-        console.error('Failed to grade session');
-      }
-    }
-  }
 } else {
-  // Normal pipeline mode
+  // Normal pipeline mode (non-grading, sequential)
   for (const session of sessions) {
     const results = await pipeline.process(session);
     const html = visualizeEvents(results);
