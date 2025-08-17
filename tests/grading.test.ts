@@ -127,17 +127,21 @@ describe('Grader', () => {
 
     describe('Grade method', () => {
         it('should process successfully on the first try', async () => {
-            const finalEvaluation = `
-        <summary>Final Summary</summary>
-        <scratchpad>Final Scratchpad</scratchpad>
-        <answer>95</answer>
-        <reasoning>Final Reasoning</reasoning>
-      `;
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                analysis: "Final Analysis",
+                score: 95,
+                reasoning: "Final Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 90,
+                processQuality: 95,
+                efficiency: 85
+            });
 
             // Mock API responses with proper typing
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValueOnce({
                     choices: [{ message: { content: finalEvaluation } }]
@@ -146,10 +150,14 @@ describe('Grader', () => {
             const result = await grader.grade(metaData, sftData);
 
             expect(result).toEqual({
-                summary: 'Final Summary',
-                scratchpad: 'Final Scratchpad',
+                summary: "Final Summary",
+                analysis: "Final Analysis",
                 score: 95,
-                reasoning: 'Final Reasoning'
+                reasoning: "Final Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 90,
+                processQuality: 95,
+                efficiency: 85
             });
 
             // Should be called twice (once for each chunk)
@@ -161,16 +169,20 @@ describe('Grader', () => {
         });
 
         it('should succeed after one retry on a chunk', async () => {
-            const finalEvaluation = `
-        <summary>Final Summary</summary>
-        <scratchpad>Final Scratchpad</scratchpad>
-        <answer>90</answer>
-        <reasoning>Final Reasoning</reasoning>
-      `;
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                analysis: "Final Analysis",
+                score: 90,
+                reasoning: "Final Reasoning",
+                confidence: 0.85,
+                outcomeAchievement: 85,
+                processQuality: 90,
+                efficiency: 80
+            });
 
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockRejectedValueOnce(new Error('API Error'))
                 .mockResolvedValueOnce({
@@ -194,7 +206,7 @@ describe('Grader', () => {
         it('should fail after max retries', async () => {
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockRejectedValue(new Error('API Error'));
 
@@ -212,16 +224,20 @@ describe('Grader', () => {
         });
 
         it('should retry if the response format is invalid', async () => {
-            const finalEvaluation = `
-        <summary>Final Summary</summary>
-        <scratchpad>Final Scratchpad</scratchpad>
-        <answer>90</answer>
-        <reasoning>Final Reasoning</reasoning>
-      `;
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                analysis: "Final Analysis",
+                score: 90,
+                reasoning: "Final Reasoning",
+                confidence: 0.8,
+                outcomeAchievement: 85,
+                processQuality: 88,
+                efficiency: 82
+            });
 
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValueOnce({
                     choices: [{ message: { content: 'invalid format' } }]
@@ -242,7 +258,7 @@ describe('Grader', () => {
         it('should fail if the response format is always invalid after max retries', async () => {
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValue({
                     choices: [{ message: { content: 'always invalid' } }]
@@ -277,16 +293,20 @@ describe('Grader', () => {
         });
 
         it('should handle invalid score in evaluation', async () => {
-            const invalidScoreEvaluation = `
-        <summary>Final Summary</summary>
-        <scratchpad>Final Scratchpad</scratchpad>
-        <answer>invalid</answer>
-        <reasoning>Final Reasoning</reasoning>
-      `;
+            const invalidScoreEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                analysis: "Final Analysis",
+                score: "invalid",  // Invalid score type
+                reasoning: "Final Reasoning",
+                confidence: 0.7,
+                outcomeAchievement: 70,
+                processQuality: 75,
+                efficiency: 65
+            });
 
             mockChatCompletionsCreate
                 .mockResolvedValueOnce({
-                    choices: [{ message: { content: '<summary>Intermediate Summary</summary>' } }]
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
                 })
                 .mockResolvedValue({
                     choices: [{ message: { content: invalidScoreEvaluation } }]
@@ -310,12 +330,16 @@ describe('Grader', () => {
                 { role: 'user', content: '```python\nscroll(0, -50)\n```' }
             ];
 
-            const finalEvaluation = `
-        <summary>Final Summary</summary>
-        <scratchpad>Final Scratchpad</scratchpad>
-        <answer>85</answer>
-        <reasoning>Final Reasoning</reasoning>
-      `;
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                analysis: "Final Analysis",
+                score: 85,
+                reasoning: "Final Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 80,
+                processQuality: 85,
+                efficiency: 90
+            });
 
             mockChatCompletionsCreate.mockResolvedValue({
                 choices: [{ message: { content: finalEvaluation } }]
@@ -332,6 +356,227 @@ describe('Grader', () => {
             // Check filtering logs
             expect(testLogger.logs.some(log =>
                 log.level === 'debug' && log.message === 'Messages filtered'
+            )).toBe(true);
+        });
+    });
+
+    describe('Evaluation Criteria Management', () => {
+        it('should get current evaluation criteria', () => {
+            const criteria = grader.getEvaluationCriteria();
+
+            expect(criteria).toEqual({
+                outcomeAchievement: {
+                    weight: 0.5,
+                    description: 'Goal completion and objective fulfillment'
+                },
+                processQuality: {
+                    weight: 0.3,
+                    description: 'Problem-solving approach, error recovery, and adaptability'
+                },
+                efficiency: {
+                    weight: 0.2,
+                    description: 'Time management, direct paths, and resource utilization'
+                }
+            });
+        });
+
+        it('should update evaluation criteria successfully', () => {
+            grader.updateEvaluationCriteria({
+                outcomeAchievement: { weight: 0.6 },
+                efficiency: { weight: 0.1 }
+            });
+
+            const criteria = grader.getEvaluationCriteria();
+            expect(criteria.outcomeAchievement.weight).toBe(0.6);
+            expect(criteria.processQuality.weight).toBe(0.3); // Unchanged
+            expect(criteria.efficiency.weight).toBe(0.1);
+
+            // Check logging
+            expect(testLogger.logs.some(log =>
+                log.level === 'info' && log.message === 'Evaluation criteria updated'
+            )).toBe(true);
+        });
+
+        it('should validate that weights sum to 1.0', () => {
+            expect(() => {
+                grader.updateEvaluationCriteria({
+                    outcomeAchievement: { weight: 0.8 },
+                    processQuality: { weight: 0.3 },
+                    efficiency: { weight: 0.2 }
+                });
+            }).toThrow('Evaluation criteria weights must sum to 1.0, got 1.3');
+
+            // Check error logging
+            expect(testLogger.logs.some(log =>
+                log.level === 'error' && log.message === 'Evaluation criteria weights do not sum to 1.0'
+            )).toBe(true);
+        });
+
+        it('should allow small tolerance in weight validation', () => {
+            // Should not throw with small rounding errors
+            expect(() => {
+                grader.updateEvaluationCriteria({
+                    outcomeAchievement: { weight: 0.501 },
+                    processQuality: { weight: 0.299 },
+                    efficiency: { weight: 0.2 }
+                });
+            }).not.toThrow();
+        });
+    });
+
+    describe('Modern JSON Parsing', () => {
+        it('should parse JSON from code blocks', async () => {
+            const jsonInCodeBlock = `\`\`\`json
+{
+  "summary": "Test Summary",
+  "analysis": "Test Analysis",
+  "score": 75,
+  "reasoning": "Test Reasoning",
+  "confidence": 0.8,
+  "outcomeAchievement": 70,
+  "processQuality": 80,
+  "efficiency": 75
+}
+\`\`\``;
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: jsonInCodeBlock } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).not.toBeNull();
+            expect(result?.score).toBe(75);
+            expect(result?.confidence).toBe(0.8);
+        });
+
+        it('should handle malformed JSON gracefully', async () => {
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValue({
+                    choices: [{ message: { content: '{ invalid json }' } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).toBeNull();
+            expect(testLogger.logs.some(log =>
+                log.level === 'error' && log.message === 'Failed to parse JSON response'
+            )).toBe(true);
+        });
+    });
+
+    describe('Score Validation and Variance Detection', () => {
+        it('should detect score calculation variance', async () => {
+            const inconsistentEvaluation = JSON.stringify({
+                summary: "Test Summary",
+                analysis: "Test Analysis",
+                score: 50, // Inconsistent with components
+                reasoning: "Test Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 90, // 90 * 0.5 = 45
+                processQuality: 80,     // 80 * 0.3 = 24  
+                efficiency: 70          // 70 * 0.2 = 14
+                // Expected: 45 + 24 + 14 = 83, but score is 50 (variance > 10)
+            });
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: inconsistentEvaluation } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).not.toBeNull();
+            expect(result?.score).toBe(50); // Uses provided score despite variance
+
+            // Check variance logging
+            expect(testLogger.logs.some(log =>
+                log.level === 'debug' && log.message === 'Score calculation variance detected'
+            )).toBe(true);
+        });
+
+        it('should clamp component scores to valid ranges', async () => {
+            const extremeEvaluation = JSON.stringify({
+                summary: "Test Summary",
+                analysis: "Test Analysis",
+                score: 75,
+                reasoning: "Test Reasoning",
+                confidence: 1.5, // > 1.0
+                outcomeAchievement: 150, // > 100
+                processQuality: -10,     // < 0
+                efficiency: 80
+            });
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: extremeEvaluation } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).not.toBeNull();
+            expect(result?.confidence).toBe(1.0); // Clamped to max
+            expect(result?.outcomeAchievement).toBe(100); // Clamped to max
+            expect(result?.processQuality).toBe(0); // Clamped to min
+            expect(result?.efficiency).toBe(80); // Within range
+        });
+    });
+
+    describe('Enhanced Logging', () => {
+        it('should log initialization with detailed config', () => {
+            expect(testLogger.logs.some(log =>
+                log.level === 'info' &&
+                log.message === 'Grader initialized' &&
+                log.meta?.model === 'gpt-4o' &&
+                log.meta?.chunkSize === 2 &&
+                log.meta?.maxRetries === 3
+            )).toBe(true);
+        });
+
+        it('should log grading process with metrics', async () => {
+            const finalEvaluation = JSON.stringify({
+                summary: "Test Summary",
+                analysis: "Test Analysis",
+                score: 85,
+                reasoning: "Test Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 80,
+                processQuality: 90,
+                efficiency: 85
+            });
+
+            mockChatCompletionsCreate
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Intermediate Summary" }) } }]
+                })
+                .mockResolvedValueOnce({
+                    choices: [{ message: { content: finalEvaluation } }]
+                });
+
+            const result = await grader.grade(metaData, sftData);
+
+            expect(result).not.toBeNull();
+
+            // Check process logging
+            expect(testLogger.logs.some(log =>
+                log.level === 'info' && log.message === 'Starting grading process'
+            )).toBe(true);
+
+            expect(testLogger.logs.some(log =>
+                log.level === 'info' && log.message === 'Grading completed successfully'
             )).toBe(true);
         });
     });

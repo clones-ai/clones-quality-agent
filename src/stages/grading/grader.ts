@@ -34,6 +34,16 @@ export interface Message {
   };
 }
 
+export interface GradeResult {
+  readonly summary: string;
+  readonly analysis: string;
+  readonly score: number;
+  readonly reasoning: string;
+  readonly confidence: number;
+  readonly outcomeAchievement: number;
+  readonly processQuality: number;
+  readonly efficiency: number;
+}
 
 export interface GraderConfig {
   readonly apiKey: string;
@@ -62,6 +72,7 @@ class DefaultLogger implements GraderLogger {
     console.debug(`[DEBUG] ${message}`, meta ? JSON.stringify(meta) : '');
   }
 }
+
 interface EvaluationCriteria {
   outcomeAchievement: {
     weight: number;
@@ -92,28 +103,17 @@ interface FinalEvaluation {
   efficiency: number;
 }
 
-interface GradeResult {
-  summary: string;
-  analysis: string;
-  score: number;
-  reasoning: string;
-  confidence: number;
-  outcomeAchievement: number;
-  processQuality: number;
-  efficiency: number;
-}
-
 export class Grader {
-  private client: OpenAI;
-  private chunkSize: number;
-  private model: string;
-  private evaluationCriteria: EvaluationCriteria;
-  private maxRetries: number;
-  private logger: GraderLogger;
+  private readonly client: OpenAI;
+  private readonly chunkSize: number;
+  private readonly model: string;
+  private readonly evaluationCriteria: EvaluationCriteria;
+  private readonly maxRetries: number;
+  private readonly logger: GraderLogger;
 
   constructor(config: GraderConfig, logger?: GraderLogger) {
     if (!config.apiKey.trim()) {
-      throw new Error('OpenAI API key is required');
+      throw new Error('OpenAI API key is required and cannot be empty');
     }
 
     this.chunkSize = Math.max(1, config.chunkSize ?? 4);
@@ -126,6 +126,7 @@ export class Grader {
       maxRetries: this.maxRetries
     });
 
+    // Use environment variable GRADER_MODEL if available, otherwise use provided model or default to gpt-4o
     this.model = config.model || process.env.GRADER_MODEL || 'gpt-4o';
 
     this.logger.info('Grader initialized', {
@@ -157,6 +158,56 @@ export class Grader {
     return new Grader({ apiKey, chunkSize, model });
   }
 
+  // Method to update evaluation criteria (useful for different evaluation contexts)
+  updateEvaluationCriteria(criteria: Partial<{
+    outcomeAchievement: Partial<{ weight: number; description: string }>;
+    processQuality: Partial<{ weight: number; description: string }>;
+    efficiency: Partial<{ weight: number; description: string }>;
+  }>): void {
+    if (criteria.outcomeAchievement) {
+      this.evaluationCriteria.outcomeAchievement = { ...this.evaluationCriteria.outcomeAchievement, ...criteria.outcomeAchievement };
+    }
+    if (criteria.processQuality) {
+      this.evaluationCriteria.processQuality = { ...this.evaluationCriteria.processQuality, ...criteria.processQuality };
+    }
+    if (criteria.efficiency) {
+      this.evaluationCriteria.efficiency = { ...this.evaluationCriteria.efficiency, ...criteria.efficiency };
+    }
+
+    // Validate that weights sum to 1.0 (with small tolerance)
+    const totalWeight = this.evaluationCriteria.outcomeAchievement.weight +
+      this.evaluationCriteria.processQuality.weight +
+      this.evaluationCriteria.efficiency.weight;
+
+    if (Math.abs(totalWeight - 1.0) > 0.01) {
+      this.logger.error('Evaluation criteria weights do not sum to 1.0', undefined, {
+        totalWeight,
+        weights: {
+          outcome: this.evaluationCriteria.outcomeAchievement.weight,
+          process: this.evaluationCriteria.processQuality.weight,
+          efficiency: this.evaluationCriteria.efficiency.weight
+        }
+      });
+      throw new Error(`Evaluation criteria weights must sum to 1.0, got ${totalWeight}`);
+    }
+
+    this.logger.info('Evaluation criteria updated', {
+      outcomeWeight: this.evaluationCriteria.outcomeAchievement.weight,
+      processWeight: this.evaluationCriteria.processQuality.weight,
+      efficiencyWeight: this.evaluationCriteria.efficiency.weight,
+      totalWeight
+    });
+  }
+
+  // Method to get current evaluation criteria (readonly)
+  getEvaluationCriteria(): Readonly<EvaluationCriteria> {
+    return {
+      outcomeAchievement: { ...this.evaluationCriteria.outcomeAchievement },
+      processQuality: { ...this.evaluationCriteria.processQuality },
+      efficiency: { ...this.evaluationCriteria.efficiency }
+    };
+  }
+
   private createSystemPrompt(meta: MetaData, prevSummary: string | null = null, isFinal: boolean = false): string {
     const basePrompt = `You are an advanced computer-use trajectory evaluator specialized in assessing human-computer interaction sequences. Your role is to provide nuanced, context-aware evaluation of user performance.
 
@@ -170,20 +221,20 @@ Objectives:
 ${meta.quest.objectives.map(objective => `- ${objective}`).join('\n')}
 
 ## EVALUATION FRAMEWORK
-Use this modern holistic approach:
+Use this modern holistic approach with weighted scoring:
 
-**Outcome Achievement (50%)**: Goal completion and objective fulfillment
+**Outcome Achievement (${Math.round(this.evaluationCriteria.outcomeAchievement.weight * 100)}%)**: ${this.evaluationCriteria.outcomeAchievement.description}
 - Did the user accomplish the primary objectives?
 - How completely were the goals achieved?
 - Were there any partial completions that show progress?
 
-**Process Quality (30%)**: Problem-solving approach, error recovery, and adaptability
+**Process Quality (${Math.round(this.evaluationCriteria.processQuality.weight * 100)}%)**: ${this.evaluationCriteria.processQuality.description}
 - How well did the user navigate obstacles?
 - Did they recover effectively from errors?
 - Was their approach logical and well-reasoned?
 - Did they demonstrate creativity or resourcefulness?
 
-**Efficiency (20%)**: Time management, direct paths, and resource utilization
+**Efficiency (${Math.round(this.evaluationCriteria.efficiency.weight * 100)}%)**: ${this.evaluationCriteria.efficiency.description}
 - Were actions direct and purposeful?
 - Did the user avoid unnecessary detours?
 - How well did they manage their time and effort?
@@ -480,8 +531,9 @@ ${actionCount === 0 ?
       // Try parsing the entire response as JSON
       return JSON.parse(text.trim());
     } catch (error) {
-      console.error('Failed to parse JSON response:', error);
-      console.error('Raw response:', text);
+      this.logger.error('Failed to parse JSON response', error as Error, {
+        rawResponse: text?.substring(0, 200) + '...'
+      });
       return null;
     }
   }
@@ -554,7 +606,6 @@ ${actionCount === 0 ?
           totalChunks
         );
 
-
         if (!chunkResult.success) {
           this.logger.error('Failed to process chunk after retries', undefined, {
             chunkIndex: i + 1,
@@ -562,66 +613,6 @@ ${actionCount === 0 ?
             sessionId: meta.id
           });
           return null;
-        }
-
-        console.log(`\nProcessing chunk ${i + 1}/${totalChunks}`);
-        const systemPrompt = this.createSystemPrompt(meta, prevSummary, isFinal);
-        const evaluation = await this.evaluateChunk(systemPrompt, chunk, isFinal, i, totalChunks);
-
-        if (!evaluation) {
-          console.log('Failed to get evaluation');
-          continue;
-        }
-
-        if (isFinal) {
-          const finalEval = this.parseJsonResponse(evaluation) as FinalEvaluation;
-
-          if (!finalEval || !finalEval.summary || typeof finalEval.score !== 'number' || !finalEval.reasoning) {
-            console.log('Failed to parse final evaluation JSON, retrying chunk...');
-            i--; // Retry this chunk
-            continue;
-          }
-
-          // Validate score components
-          const outcomeScore = finalEval.outcomeAchievement || 0;
-          const processScore = finalEval.processQuality || 0;
-          const efficiencyScore = finalEval.efficiency || 0;
-          const confidence = Math.max(0, Math.min(1, finalEval.confidence || 0.5));
-
-          console.log({
-            summary: finalEval.summary,
-            analysis: finalEval.analysis,
-            score: finalEval.score,
-            reasoning: finalEval.reasoning,
-            confidence: confidence,
-            breakdown: {
-              outcome: outcomeScore,
-              process: processScore,
-              efficiency: efficiencyScore
-            }
-          });
-
-          return {
-            summary: finalEval.summary,
-            analysis: finalEval.analysis || finalEval.reasoning,
-            score: finalEval.score,
-            reasoning: finalEval.reasoning,
-            confidence: confidence,
-            outcomeAchievement: outcomeScore,
-            processQuality: processScore,
-            efficiency: efficiencyScore
-          };
-        } else {
-          const chunkEval = this.parseJsonResponse(evaluation) as ChunkEvaluation;
-
-          if (!chunkEval || !chunkEval.summary) {
-            console.log('Failed to parse chunk evaluation JSON, retrying chunk...');
-            i--; // Retry this chunk
-            continue;
-          }
-
-          prevSummary = chunkEval.summary;
-          console.log(`Progress Summary: ${prevSummary}`);
         }
 
         if (isFinal && chunkResult.result) {
@@ -693,14 +684,14 @@ ${actionCount === 0 ?
           return { success: true, result };
         }
 
-        this.logger.error('Failed to parse final evaluation tags', undefined, {
+        this.logger.error('Failed to parse final evaluation JSON', undefined, {
           chunkIndex: chunkIndex + 1,
           attempt: retries + 1,
           evaluation: evaluation.substring(0, 200) + '...'
         });
         retries++;
       } else {
-        const summary = this.extractTags(evaluation, 'summary');
+        const summary = this.parseChunkEvaluation(evaluation);
         if (summary) {
           this.logger.debug('Intermediate summary extracted', {
             chunkIndex: chunkIndex + 1,
@@ -709,7 +700,7 @@ ${actionCount === 0 ?
           return { success: true, summary };
         }
 
-        this.logger.error('Failed to parse summary tag', undefined, {
+        this.logger.error('Failed to parse chunk evaluation JSON', undefined, {
           chunkIndex: chunkIndex + 1,
           attempt: retries + 1,
           evaluation: evaluation.substring(0, 200) + '...'
@@ -722,29 +713,63 @@ ${actionCount === 0 ?
   }
 
   private parseFinalEvaluation(evaluation: string): GradeResult | null {
-    const summary = this.extractTags(evaluation, 'summary');
-    const scratchpad = this.extractTags(evaluation, 'scratchpad');
-    const scoreStr = this.extractTags(evaluation, 'answer');
-    const reasoning = this.extractTags(evaluation, 'reasoning');
+    const finalEval = this.parseJsonResponse(evaluation) as FinalEvaluation;
 
-    if (!summary || !scratchpad || !scoreStr || !reasoning) {
+    if (!finalEval || !finalEval.summary || (typeof finalEval.score !== 'number' && typeof finalEval.score !== 'string') || !finalEval.reasoning) {
       return null;
     }
 
-    const score = parseInt(scoreStr, 10);
+    // Validate score components
+    const outcomeScore = Math.max(0, Math.min(100, finalEval.outcomeAchievement || 0));
+    const processScore = Math.max(0, Math.min(100, finalEval.processQuality || 0));
+    const efficiencyScore = Math.max(0, Math.min(100, finalEval.efficiency || 0));
+    const confidence = Math.max(0, Math.min(1, finalEval.confidence || 0.5));
+
+    const score = parseInt(finalEval.score.toString(), 10);
     if (isNaN(score) || score < 0 || score > 100) {
       this.logger.error('Invalid score in evaluation', undefined, {
-        scoreStr,
+        scoreStr: finalEval.score.toString(),
         parsedScore: score
       });
       return null;
     }
 
+    // Calculate expected weighted score based on criteria
+    const expectedScore = Math.round(
+      outcomeScore * this.evaluationCriteria.outcomeAchievement.weight +
+      processScore * this.evaluationCriteria.processQuality.weight +
+      efficiencyScore * this.evaluationCriteria.efficiency.weight
+    );
+
+    // Log score validation (allow some tolerance for LLM rounding)
+    const scoreDifference = Math.abs(score - expectedScore);
+    if (scoreDifference > 10) {
+      this.logger.debug('Score calculation variance detected', {
+        providedScore: score,
+        expectedScore: expectedScore,
+        difference: scoreDifference,
+        components: {
+          outcome: `${outcomeScore} * ${this.evaluationCriteria.outcomeAchievement.weight}`,
+          process: `${processScore} * ${this.evaluationCriteria.processQuality.weight}`,
+          efficiency: `${efficiencyScore} * ${this.evaluationCriteria.efficiency.weight}`
+        }
+      });
+    }
+
     return {
-      summary,
-      scratchpad,
-      score,
-      reasoning
+      summary: finalEval.summary,
+      analysis: finalEval.analysis || finalEval.reasoning,
+      score: score,
+      reasoning: finalEval.reasoning,
+      confidence: confidence,
+      outcomeAchievement: outcomeScore,
+      processQuality: processScore,
+      efficiency: efficiencyScore
     };
+  }
+
+  private parseChunkEvaluation(evaluation: string): string | null {
+    const chunkEval = this.parseJsonResponse(evaluation) as ChunkEvaluation;
+    return chunkEval?.summary || null;
   }
 }
