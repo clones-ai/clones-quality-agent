@@ -147,6 +147,9 @@ if (values.grade) {
       if (result) {
         console.log('\nGrading complete!');
         console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+        if (result.modelScoreRaw !== result.score) {
+          console.log(`Model Raw Score: ${result.modelScoreRaw}/100 (difference: ${Math.abs(result.score - result.modelScoreRaw)})`);
+        }
         console.log('\nScore Breakdown:');
         console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
         console.log(`- Process Quality: ${result.processQuality}/100`);
@@ -186,6 +189,9 @@ if (values.grade) {
       if (result) {
         console.log('\nGrading complete!');
         console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+        if (result.modelScoreRaw !== result.score) {
+          console.log(`Model Raw Score: ${result.modelScoreRaw}/100 (difference: ${Math.abs(result.score - result.modelScoreRaw)})`);
+        }
         console.log('\nScore Breakdown:');
         console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
         console.log(`- Process Quality: ${result.processQuality}/100`);

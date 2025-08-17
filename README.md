@@ -55,7 +55,8 @@ The pipeline includes a state-of-the-art grading mode that evaluates task comple
 
 ### **🔧 Robust Infrastructure**
 - **60-second timeout** on OpenAI API calls (prevents infinite hanging)
-- **Automatic retry logic** with exponential backoff (max 3 attempts)
+- **Exponential backoff with jitter**: Smart retry delays (500ms → 1s → 2s → 4s → 8s max)
+- **Automatic retry logic**: Up to 3 attempts with intelligent delay patterns
 - **Structured logging** for better observability and debugging
 - **Graceful error handling** for network issues and API failures
 
@@ -64,15 +65,17 @@ The pipeline includes a state-of-the-art grading mode that evaluates task comple
   - **Outcome Achievement (50%)**: Goal completion and objective fulfillment
   - **Process Quality (30%)**: Problem-solving approach, error recovery, adaptability
   - **Efficiency (20%)**: Time management, direct paths, resource utilization
-- **JSON-based evaluation**: Structured responses with detailed analysis
+- **Structured Outputs**: OpenAI JSON Schema strict mode for guaranteed response format
+- **Deterministic Scoring**: Mathematically calculated scores from components (build-reproducible)
 - **Confidence scoring**: 0.0-1.0 confidence levels for each evaluation
-- **Chain-of-thought reasoning**: 5-step systematic evaluation process
+- **Chain-of-thought reasoning**: 6-step systematic evaluation process with brief observations
 
 ### **🎯 Advanced Features**
 - **Dynamic evaluation criteria**: Configurable scoring weights for different contexts
-- **Variance detection**: Automatically detects LLM calculation inconsistencies
+- **Score transparency**: Raw model scores preserved alongside calculated deterministic scores
 - **Enhanced context awareness**: Adaptive evaluation for different interaction types
 - **Anti-hallucination safeguards**: Explicit instructions against inferring non-existent actions
+- **Modern prompt engineering**: Optimized for GPT-4o/Claude-3.5 with 2025 best practices
 
 ### Setup
 
@@ -101,8 +104,9 @@ The modernized grader will:
 3. If not found, run the normal pipeline first to generate `sft.json`, then grade it
 4. Output a comprehensive `scores.json` file containing:
    - **Summary**: Bullet-point overview of all accomplished tasks
-   - **Analysis**: Detailed step-by-step reasoning following chain-of-thought process
-   - **Score**: Overall score from 0-100 with component breakdown
+   - **Observations**: Brief, high-level bullet points (2-4 max) of key insights
+   - **Score**: Deterministic score calculated from weighted components (0-100)
+   - **Model Score Raw**: Original LLM score for diagnostic comparison
    - **Reasoning**: Clear justification based on the holistic evaluation framework
    - **Confidence**: AI confidence level (0.0-1.0) in the assessment
    - **Component Scores**: Individual scores for outcome, process quality, and efficiency
@@ -110,6 +114,7 @@ The modernized grader will:
 ### **Enhanced Console Output**
 ```
 Score: 78/100 (Confidence: 92.0%)
+Model Raw Score: 75/100 (difference: 3)
 
 Score Breakdown:
 - Outcome Achievement: 75/100
@@ -120,6 +125,11 @@ Summary:
 • Successfully navigated to target application
 • Completed 3 out of 4 primary objectives
 • Demonstrated good error recovery when encountering obstacles
+
+Observations:
+• User demonstrated strong navigation skills and adaptability.
+• Process was methodical with effective error recovery.
+• Final objective incomplete but progress was substantial.
 
 Reasoning:
 High outcome achievement (75% of objectives completed) combined with excellent 
@@ -174,13 +184,14 @@ bun test
 The project includes extensive tests for the modernized grading system:
 
 #### **Test Categories**
-- **Unit Tests**: 23 tests with mocked API calls (fast execution)
+- **Unit Tests**: 27 tests with mocked API calls (fast execution)
 - **Integration Tests**: Real OpenAI API validation (requires OPENAI_API_KEY)
 - **Coverage**: 100% of new APIs and features tested
+- **Feature Tests**: Structured Outputs, deterministic scoring, exponential backoff
 
 #### **Running Tests**
 ```bash
-# Unit tests (mocked, fast) - 23 tests, 56 assertions
+# Unit tests (mocked, fast) - 27 tests, 107 assertions
 bun run test:grading:unit
 
 # Integration tests (real API, requires OPENAI_API_KEY)
@@ -193,11 +204,42 @@ bun run test:grading:all
 bun run test:grading
 ```
 
+## **🔧 Technical Details**
+
+### **Structured Outputs Implementation**
+- **JSON Schema Strict Mode**: Guaranteed response format with OpenAI's latest API
+- **Type Safety**: Automatic validation of required fields and data types
+- **Performance**: Reduced token usage by eliminating verbose JSON examples
+
+### **Deterministic Scoring Algorithm**
+```typescript
+// Mathematically calculated from weighted components
+const calculatedScore = Math.round(
+  outcomeScore * 0.5 +      // 50% weight
+  processScore * 0.3 +      // 30% weight  
+  efficiencyScore * 0.2     // 20% weight
+);
+
+// Raw model score preserved for diagnostics
+result.modelScoreRaw = originalLLMScore;
+result.score = calculatedScore;  // Used for final scoring
+```
+
+### **Exponential Backoff Formula**
+```typescript
+const delay = Math.min(8000, 500 * 2 ** (retries - 1)) + Math.random() * 250;
+// Retry 1: 500-750ms
+// Retry 2: 1000-1250ms  
+// Retry 3: 2000-2250ms
+// Maximum: 8000ms + jitter
+```
+
 ## **🚀 Future-Proof Design**
 
 This modernized grading system is designed for **2025 LLM capabilities** and beyond:
 
-- **GPT-5 Ready**: Optimized prompts and JSON mode for next-generation models
+- **GPT-5 Ready**: Optimized prompts and Structured Outputs for next-generation models
 - **Scalable Architecture**: Configurable evaluation criteria for different contexts
 - **Extensible Framework**: Easy to add new evaluation dimensions
 - **Production Grade**: Battle-tested error handling and comprehensive logging
+- **Build Reproducible**: Deterministic scoring ensures consistent results across deployments

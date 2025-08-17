@@ -39,6 +39,7 @@ export interface GradeResult {
   readonly summary: string;
   readonly observations: string;
   readonly score: number;
+  readonly modelScoreRaw: number;
   readonly reasoning: string;
   readonly confidence: number;
   readonly outcomeAchievement: number;
@@ -800,32 +801,37 @@ ${actionCount === 0 ?
     const efficiencyScore = Math.max(0, Math.min(100, finalEval.efficiency));
     const confidence = Math.max(0, Math.min(1, finalEval.confidence));
 
-    // Calculate expected weighted score based on criteria
-    const expectedScore = Math.round(
+    // Calculate deterministic score from weighted components
+    const calculatedScore = Math.round(
       outcomeScore * this.evaluationCriteria.outcomeAchievement.weight +
       processScore * this.evaluationCriteria.processQuality.weight +
       efficiencyScore * this.evaluationCriteria.efficiency.weight
     );
 
-    // Log score validation (allow some tolerance for LLM rounding)
-    const scoreDifference = Math.abs(finalEval.score - expectedScore);
-    if (scoreDifference > 10) {
-      this.logger.debug('Score calculation variance detected', {
-        providedScore: finalEval.score,
-        expectedScore: expectedScore,
+    // Store raw model score for diagnostics
+    const modelScoreRaw = finalEval.score;
+
+    // Log score comparison for diagnostic purposes
+    const scoreDifference = Math.abs(modelScoreRaw - calculatedScore);
+    if (scoreDifference > 0) {
+      this.logger.debug('Score calculation comparison', {
+        modelScoreRaw: modelScoreRaw,
+        calculatedScore: calculatedScore,
         difference: scoreDifference,
         components: {
-          outcome: `${outcomeScore} * ${this.evaluationCriteria.outcomeAchievement.weight}`,
-          process: `${processScore} * ${this.evaluationCriteria.processQuality.weight}`,
-          efficiency: `${efficiencyScore} * ${this.evaluationCriteria.efficiency.weight}`
-        }
+          outcome: `${outcomeScore} * ${this.evaluationCriteria.outcomeAchievement.weight} = ${(outcomeScore * this.evaluationCriteria.outcomeAchievement.weight).toFixed(1)}`,
+          process: `${processScore} * ${this.evaluationCriteria.processQuality.weight} = ${(processScore * this.evaluationCriteria.processQuality.weight).toFixed(1)}`,
+          efficiency: `${efficiencyScore} * ${this.evaluationCriteria.efficiency.weight} = ${(efficiencyScore * this.evaluationCriteria.efficiency.weight).toFixed(1)}`
+        },
+        formula: `${(outcomeScore * this.evaluationCriteria.outcomeAchievement.weight).toFixed(1)} + ${(processScore * this.evaluationCriteria.processQuality.weight).toFixed(1)} + ${(efficiencyScore * this.evaluationCriteria.efficiency.weight).toFixed(1)} = ${calculatedScore}`
       });
     }
 
     return {
       summary: finalEval.summary,
       observations: finalEval.observations,
-      score: finalEval.score,
+      score: calculatedScore, // Use calculated score for deterministic results
+      modelScoreRaw: modelScoreRaw, // Preserve original model score for diagnostics
       reasoning: finalEval.reasoning,
       confidence: confidence,
       outcomeAchievement: outcomeScore,
