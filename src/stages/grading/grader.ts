@@ -36,7 +36,7 @@ export interface Message {
 
 export interface GradeResult {
   readonly summary: string;
-  readonly analysis: string;
+  readonly observations: string;
   readonly score: number;
   readonly reasoning: string;
   readonly confidence: number;
@@ -94,7 +94,7 @@ interface ChunkEvaluation {
 
 interface FinalEvaluation {
   summary: string;
-  analysis: string;
+  observations: string;
   score: number;
   reasoning: string;
   confidence: number;
@@ -251,7 +251,8 @@ For each evaluation, follow these steps:
 2. **Evaluate step-by-step execution**: How did they approach each objective?
 3. **Assess obstacles and recovery**: How did they handle challenges?
 4. **Judge efficiency and creativity**: Was their approach optimal?
-5. **Calculate holistic score**: Combine all factors for final assessment
+5. **Formulate key observations**: Synthesize your findings into concise points.
+6. **Calculate holistic score**: Combine all factors for final assessment
 
 ## CONFIDENCE ASSESSMENT
 Rate your confidence (0.0-1.0) based on:
@@ -274,7 +275,7 @@ This is the final chunk. Provide a complete JSON evaluation following this exact
 \`\`\`json
 {
   "summary": "Comprehensive bullet-point overview of all progress made across all chunks",
-  "analysis": "Detailed step-by-step reasoning following the chain-of-thought process",
+  "observations": "Brief, high-level bullet points (2-4 max) of key insights from your evaluation. Do not reveal detailed step-by-step reasoning.",
   "score": 85,
   "reasoning": "Clear justification for the final score based on the evaluation framework",
   "confidence": 0.9,
@@ -294,7 +295,7 @@ This is the final chunk. Provide a complete JSON evaluation following this exact
 \`\`\`json
 {
   "summary": "• Successfully navigated to pizza ordering website\n• Located and selected correct pizza size and toppings\n• Added item to cart successfully\n• Failed to complete checkout process - session abandoned",
-  "analysis": "1. Goal Identification: User clearly understood the pizza ordering task\n2. Step-by-step Execution: Navigation and selection were executed well, showing familiarity with e-commerce interfaces\n3. Obstacles and Recovery: No significant obstacles encountered, but user failed to persist through checkout\n4. Efficiency Assessment: Initial actions were direct and purposeful\n5. Final Assessment: Strong start but critical failure to complete the primary goal",
+  "observations": "• User demonstrated proficiency with e-commerce UI.\n• Session was abandoned at the critical checkout step.\n• Initial actions were efficient but the final goal was not achieved.",
   "score": 45,
   "reasoning": "While the user demonstrated competent navigation and selection skills (75% of objectives completed), the failure to complete checkout represents a critical gap in goal achievement. Outcome Achievement: 60% (3/4 objectives), Process Quality: 70% (good execution until abandonment), Efficiency: 80% (direct actions when engaged).",
   "confidence": 0.95,
@@ -758,7 +759,7 @@ ${actionCount === 0 ?
 
     return {
       summary: finalEval.summary,
-      analysis: finalEval.analysis || finalEval.reasoning,
+      observations: finalEval.observations || finalEval.reasoning,
       score: score,
       reasoning: finalEval.reasoning,
       confidence: confidence,
