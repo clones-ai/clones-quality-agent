@@ -129,6 +129,34 @@ For each session, `scores.json`:
 }
 ```
 
+For each session, `metrics.json`:
+
+```json
+{
+  "sessionId": "session_123",
+  "status": "success",
+  "totalRequests": 3,
+  "successfulRequests": 3,
+  "failedRequests": 0,
+  "totalTokens": 1250,
+  "totalDuration": 4200,
+  "averageRetries": 0.33,
+  "details": [
+    {
+      "responseId": "chatcmpl-xyz",
+      "type": "chunk",
+      "chunkIndex": 0,
+      "outcome": "success",
+      "tokens": 400,
+      "duration": 1200,
+      "retries": 1
+    }
+  ]
+}
+```
+
+Plus a global `metrics.json` with aggregate statistics across all sessions.
+
 ### CLI flow in grading mode
 
 * If `sft.json` exists, it is read, chunked, and graded.
@@ -288,14 +316,22 @@ const criteria = grader.getEvaluationCriteria();
 
 ---
 
-## Outputs from the pipeline (non-grading)
+## Outputs from the pipeline
 
-When not in `--grade` mode, the pipeline writes:
+### Non-grading mode
 
 * `results.html` – session visualization
 * `results.json` – processed session data
 * `sft.html` – formatted messages preview
 * `sft.json` – formatted messages used for grading
+
+### Grading mode
+
+All of the above, plus:
+
+* `scores.json` – evaluation results per session
+* `metrics.json` – performance metrics per session
+* `metrics.json` (global) – aggregate metrics across all sessions
 
 ---
 
