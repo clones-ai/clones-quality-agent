@@ -527,6 +527,58 @@ describe('Grader', () => {
             expect(filteredLog?.meta?.originalCount).toBe(10); // Total messages
             expect(filteredLog?.meta?.filteredCount).toBe(7);  // After filtering
         });
+
+        it('should calculate action density correctly', async () => {
+            // Create test data with specific action distribution
+            const testMessages: readonly Message[] = [
+                // Chunk 1: 3 actions (image + 2 commands)
+                { role: 'user', content: { type: 'image', data: 'img1' } },
+                { role: 'user', content: 'click(1,1)' },
+                { role: 'user', content: 'type(hello)' },
+                // Chunk 2: 2 actions  
+                { role: 'user', content: { type: 'image', data: 'img2' } },
+                { role: 'user', content: 'click(2,2)' },
+                // Chunk 3: 1 action
+                { role: 'user', content: 'click(3,3)' }
+            ];
+            // Total: 6 actions across 3 chunks (chunkSize=2: [3,2,1])
+
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                observations: "Action density test observations",
+                score: 85,
+                reasoning: "Final Reasoning",
+                confidence: 0.9,
+                outcomeAchievement: 80,
+                processQuality: 90,
+                efficiency: 85
+            });
+
+            mockChatCompletionsCreate.mockResolvedValue({
+                choices: [{ message: { content: finalEvaluation } }]
+            });
+
+            // Spy on evaluateChunk to capture the context messages
+            const evaluateChunkSpy = spyOn(grader, 'evaluateChunk');
+
+            const result = await grader.grade(metaData, testMessages);
+
+            expect(result).not.toBeNull();
+            expect(evaluateChunkSpy).toHaveBeenCalledTimes(3); // 3 chunks
+
+            // Verify action density calculations:
+            // Chunk 1: 3 actions / 6 total = 50%
+            // Chunk 2: 2 actions / 6 total = 33% 
+            // Chunk 3: 1 action / 6 total = 17%
+            const calls = evaluateChunkSpy.mock.calls;
+
+            // Check that totalActions (6) is passed correctly to each chunk
+            expect(calls[0][5]).toBe(6); // totalActions parameter (index 5) for chunk 1
+            expect(calls[1][5]).toBe(6); // totalActions parameter (index 5) for chunk 2  
+            expect(calls[2][5]).toBe(6); // totalActions parameter (index 5) for chunk 3
+
+            evaluateChunkSpy.mockRestore();
+        });
     });
 
     describe('Evaluation Criteria Management', () => {

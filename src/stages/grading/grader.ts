@@ -461,12 +461,13 @@ The response will be automatically formatted with a single field:
     return String(content);
   }
 
-  private async evaluateChunk(
+  public async evaluateChunk(
     systemPrompt: string,
     messages: readonly Message[],
     isFinal: boolean,
     chunkIndex: number = 0,
-    totalChunks: number = 1
+    totalChunks: number = 1,
+    totalActions: number = 0
   ): Promise<string | null> {
     try {
       // Add chunk metadata to system prompt
@@ -534,7 +535,7 @@ ${actionCount === 0 ?
         : `=== BEGIN_ACTIONS (${actionCount} user interactions) ===
 🎯 ACTIVE ANALYSIS: Evaluating ${actionCount} user action${actionCount > 1 ? 's' : ''} in sequence.
 🧠 FOCUS: Action logic, decision quality, goal progression, and efficiency.
-📊 CONTEXT: Chunk ${chunkIndex + 1}/${totalChunks} - ${Math.round((actionCount / Math.max(1, totalChunks)) * 100)}% action density.`;
+📊 CONTEXT: Chunk ${chunkIndex + 1}/${totalChunks} - ${Math.round((actionCount / Math.max(1, totalActions)) * 100)}% action density.`;
 
       formattedMessages.push({
         role: 'user',
@@ -640,6 +641,7 @@ ${actionCount === 0 ?
       // Split messages into chunks
       const chunks = this.chunkMessages(sft, this.chunkSize);
       const totalChunks = chunks.length;
+      const totalActions = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
 
       if (totalChunks === 0) {
         this.logger.error('No chunks to process after filtering messages');
@@ -664,7 +666,8 @@ ${actionCount === 0 ?
           prevSummary,
           isFinal,
           i,
-          totalChunks
+          totalChunks,
+          totalActions
         );
 
         if (!chunkResult.success) {
@@ -707,7 +710,8 @@ ${actionCount === 0 ?
     prevSummary: string | null,
     isFinal: boolean,
     chunkIndex: number,
-    totalChunks: number
+    totalChunks: number,
+    totalActions: number
   ): Promise<{ success: boolean; result?: GradeResult; summary?: string }> {
     let retries = 0;
 
@@ -724,7 +728,7 @@ ${actionCount === 0 ?
       });
 
       const systemPrompt = this.createSystemPrompt(meta, prevSummary, isFinal);
-      const evaluation = await this.evaluateChunk(systemPrompt, chunk, isFinal, chunkIndex, totalChunks);
+      const evaluation = await this.evaluateChunk(systemPrompt, chunk, isFinal, chunkIndex, totalChunks, totalActions);
 
       if (!evaluation) {
         this.logger.error('Failed to get evaluation from API', undefined, {
