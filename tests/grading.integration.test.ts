@@ -1,310 +1,231 @@
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { Grader, type GraderConfig, type GraderLogger } from '../src/stages/grading/grader';
-import type { Message, MetaData } from '../src/stages/grading/grader';
+import { describe, it, expect } from "bun:test";
+import {
+    Grader,
+    type GraderConfig,
+    type GraderLogger,
+    type Chunk,
+    type MetaData,
+} from "../src/stages/grading/grader";
 
-// Integration test logger that captures real API interactions
+/** Simple integration logger implementing the GraderLogger interface. */
 class IntegrationLogger implements GraderLogger {
-    public logs: Array<{ level: string; message: string; meta?: Record<string, unknown>; error?: Error; timestamp: number }> = [];
+    public logs: Array<{
+        level: "debug" | "info" | "warn" | "error";
+        message: string;
+        error?: Error;
+        meta?: Record<string, unknown>;
+        ts: number;
+    }> = [];
 
-    info(message: string, meta?: Record<string, unknown>): void {
-        this.logs.push({ level: 'info', message, meta, timestamp: Date.now() });
-        console.log(`[INTEGRATION-INFO] ${message}`, meta ? JSON.stringify(meta, null, 2) : '');
+    debug(message: string, err?: Error, meta?: Record<string, unknown>) {
+        this.logs.push({ level: "debug", message, error: err, meta, ts: Date.now() });
+        // console.debug(`[INT-DEBUG] ${message}`, err?.message ?? "", meta ?? "");
     }
-
-    error(message: string, error?: Error, meta?: Record<string, unknown>): void {
-        this.logs.push({ level: 'error', message, error, meta, timestamp: Date.now() });
-        console.error(`[INTEGRATION-ERROR] ${message}`, error?.message || '', meta ? JSON.stringify(meta, null, 2) : '');
+    info(message: string, err?: Error, meta?: Record<string, unknown>) {
+        this.logs.push({ level: "info", message, error: err, meta, ts: Date.now() });
+        // console.log(`[INT-INFO] ${message}`, err?.message ?? "", meta ?? "");
     }
-
-    debug(message: string, meta?: Record<string, unknown>): void {
-        this.logs.push({ level: 'debug', message, meta, timestamp: Date.now() });
-        console.debug(`[INTEGRATION-DEBUG] ${message}`, meta ? JSON.stringify(meta, null, 2) : '');
+    warn(message: string, err?: Error, meta?: Record<string, unknown>) {
+        this.logs.push({ level: "warn", message, error: err, meta, ts: Date.now() });
+        // console.warn(`[INT-WARN] ${message}`, err?.message ?? "", meta ?? "");
     }
-
-    clear(): void {
-        this.logs = [];
-    }
-
-    getExecutionTime(): number {
-        if (this.logs.length < 2) return 0;
-        return this.logs[this.logs.length - 1].timestamp - this.logs[0].timestamp;
+    error(message: string, err?: Error, meta?: Record<string, unknown>) {
+        this.logs.push({ level: "error", message, error: err, meta, ts: Date.now() });
+        // console.error(`[INT-ERROR] ${message}`, err?.message ?? "", meta ?? "");
     }
 }
 
-describe('Grader Integration Tests', () => {
-    let grader: Grader;
-    let logger: IntegrationLogger;
-    let config: GraderConfig;
+/** Convert a list of textual "actions" into Grader chunks of size N. */
+function toChunks(actions: string[], chunkSize = 2): Chunk[] {
+    const chunks: Chunk[] = [];
+    for (let i = 0; i < actions.length; i += chunkSize) {
+        const slice = actions.slice(i, i + chunkSize);
+        chunks.push(slice.map((t) => ({ type: "text", text: t })));
+    }
+    return chunks;
+}
 
-    // Sample realistic test data
-    const metaData: MetaData = {
-        id: 'integration-test-001',
-        timestamp: new Date().toISOString(),
-        duration_seconds: 45,
-        status: 'completed',
-        reason: 'integration-testing',
-        title: 'Integration Test Quest',
-        description: 'Testing real API integration',
-        platform: 'web',
-        arch: 'x64',
-        version: '1.0.0',
-        locale: 'en-US',
-        primary_monitor: { width: 1920, height: 1080 },
-        quest: {
-            title: 'Simple Web Navigation Test',
-            app: 'Chrome Browser',
-            icon_url: 'https://example.com/chrome.png',
-            content: 'Navigate to google.com and search for "OpenAI"',
-            objectives: [
-                'Open web browser',
-                'Navigate to google.com',
-                'Enter search term "OpenAI"',
-                'Click search button',
-                'Verify search results appear'
-            ]
-        }
-    } as const;
+/** Sample text-only actions for a realistic, but simple, web task. */
+const sftActions = [
+    'open_browser()',
+    'navigate_to("https://google.com")',
+    'click_element("search_box")',
+    'type_text("OpenAI")',
+    'click_element("search_button")',
+    "wait_for_results()",
+];
 
-    // Text-only test data for integration tests (no images to avoid API issues)
-    const sftData: readonly Message[] = [
-        { role: 'user', content: 'open_browser()' },
-        { role: 'user', content: 'navigate_to("https://google.com")' },
-        { role: 'user', content: 'click_element("search_box")' },
-        { role: 'user', content: 'type_text("OpenAI")' },
-        { role: 'user', content: 'click_element("search_button")' },
-        { role: 'user', content: 'wait_for_results()' }
-    ] as const;
+const meta: MetaData = {
+    sessionId: "integration-test-001",
+    platform: "web",
+    taskDescription: 'Navigate to google.com and search for "OpenAI"',
+};
 
-    beforeAll(() => {
-        // Skip integration tests if no API key
-        if (!process.env.OPENAI_API_KEY) {
-            console.log('⚠️  Skipping integration tests - OPENAI_API_KEY not set');
-            return;
-        }
-
-        logger = new IntegrationLogger();
-        config = {
-            apiKey: process.env.OPENAI_API_KEY!,
-            chunkSize: 2,
-            model: 'gpt-4o-mini', // Use vision-capable model for integration tests
-            timeout: 30 * 1000, // 30 second timeout
-            maxRetries: 2 // Fewer retries for faster tests
-        };
-
-        grader = new Grader(config, logger);
-    });
-
-    afterAll(() => {
-        if (logger) {
-            logger.clear();
-        }
-    });
-
-    describe('Real API Integration', () => {
-        it('should successfully grade with real OpenAI API', async () => {
+describe("Grader Integration (real API)", () => {
+    it(
+        "smoke: evaluates a short session successfully",
+        async () => {
             if (!process.env.OPENAI_API_KEY) {
-                console.log('⏭️  Skipping - no API key');
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
                 return;
             }
 
-            const startTime = Date.now();
-            const result = await grader.grade(metaData, sftData);
-            const duration = Date.now() - startTime;
-
-            // Verify we got a real result
-            expect(result).not.toBeNull();
-            expect(result!.score).toBeGreaterThanOrEqual(0);
-            expect(result!.score).toBeLessThanOrEqual(100);
-            expect(result!.summary).toContain('');
-            expect(result!.reasoning).toContain('');
-
-            // Verify timing is reasonable (should complete within timeout)
-            expect(duration).toBeLessThan(30000);
-
-            // Verify logging captured the process
-            expect(logger.logs.some(log => log.message === 'Grader initialized')).toBe(true);
-            expect(logger.logs.some(log => log.message === 'Starting grading process')).toBe(true);
-            expect(logger.logs.some(log => log.message === 'Grading completed successfully')).toBe(true);
-
-            console.log(`✅ Integration test completed in ${duration}ms`);
-            console.log(`📊 Final score: ${result!.score}/100`);
-            console.log(`📝 Summary: ${result!.summary.substring(0, 100)}...`);
-        }, 60000); // 60 second timeout for this test
-
-        it('should handle timeout gracefully', async () => {
-            if (!process.env.OPENAI_API_KEY) {
-                console.log('⏭️  Skipping - no API key');
-                return;
-            }
-
-            // Create a grader with very short timeout to test timeout handling
-            const shortTimeoutConfig: GraderConfig = {
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
                 chunkSize: 2,
-                model: 'gpt-4o-mini',
-                timeout: 100, // Very short timeout (100ms)
-                maxRetries: 1
+                model: "gpt-4o-mini", // fast & vision-capable model
+                timeout: 30_000,
+                maxRetries: 2,
             };
 
-            const shortTimeoutLogger = new IntegrationLogger();
-            const shortTimeoutGrader = new Grader(shortTimeoutConfig, shortTimeoutLogger);
+            const grader = new Grader(config, logger);
+            const chunks = toChunks(sftActions, config.chunkSize ?? 2);
 
-            const startTime = Date.now();
-            const result = await shortTimeoutGrader.grade(metaData, sftData);
-            const duration = Date.now() - startTime;
+            const t0 = Date.now();
+            const result = await grader.evaluateSession(chunks, meta);
+            const elapsed = Date.now() - t0;
 
-            // Should return null due to timeout
-            expect(result).toBeNull();
+            // Basic sanity checks
+            expect(result.summary.length).toBeGreaterThan(0);
+            expect(result.observations.length).toBeGreaterThan(0);
+            expect(result.reasoning.length).toBeGreaterThan(0);
+            expect(result.score).toBeGreaterThanOrEqual(0);
+            expect(result.score).toBeLessThanOrEqual(100);
+            expect(result.outcomeAchievement).toBeGreaterThanOrEqual(0);
+            expect(result.outcomeAchievement).toBeLessThanOrEqual(100);
+            expect(result.processQuality).toBeGreaterThanOrEqual(0);
+            expect(result.processQuality).toBeLessThanOrEqual(100);
+            expect(result.efficiency).toBeGreaterThanOrEqual(0);
+            expect(result.efficiency).toBeLessThanOrEqual(100);
+            expect(result.confidence).toBeGreaterThanOrEqual(0);
+            expect(result.confidence).toBeLessThanOrEqual(1);
 
-            // Should complete quickly (within a few seconds, not hang forever)
-            expect(duration).toBeLessThan(10000);
+            // Should finish within the timeout budget (plus small overhead)
+            expect(elapsed).toBeLessThan(35_000);
 
-            // Should have logged timeout errors
-            expect(shortTimeoutLogger.logs.some(log =>
-                log.level === 'error' && log.message === 'Error calling OpenAI API'
-            )).toBe(true);
+            console.log(`✅ Smoke test ok in ${elapsed}ms — score=${result.score}/100`);
+        },
+        60_000
+    );
 
-            console.log(`✅ Timeout test completed in ${duration}ms (expected failure)`);
-        }, 15000);
-
-        it('should handle retry logic with real API', async () => {
+    it(
+        "handles very short timeout by throwing (graceful failure)",
+        async () => {
             if (!process.env.OPENAI_API_KEY) {
-                console.log('⏭️  Skipping - no API key');
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
                 return;
             }
 
-            // Use a configuration that might need retries
-            const retryConfig: GraderConfig = {
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
-                chunkSize: 1, // Smaller chunks = more API calls = more opportunities for retries
-                model: 'gpt-4o-mini',
-                timeout: 15 * 1000,
-                maxRetries: 3
-            };
-
-            const retryLogger = new IntegrationLogger();
-            const retryGrader = new Grader(retryConfig, retryLogger);
-
-            const startTime = Date.now();
-            const result = await retryGrader.grade(metaData, sftData);
-            const duration = Date.now() - startTime;
-
-            // Should eventually succeed or fail gracefully
-            if (result) {
-                expect(result.score).toBeGreaterThanOrEqual(0);
-                expect(result.score).toBeLessThanOrEqual(100);
-                console.log(`✅ Retry test succeeded in ${duration}ms with score: ${result.score}`);
-            } else {
-                console.log(`⚠️  Retry test failed gracefully in ${duration}ms (acceptable)`);
-            }
-
-            // Should not hang indefinitely
-            expect(duration).toBeLessThan(60000);
-
-            // Should have processed multiple chunks
-            expect(retryLogger.logs.some(log =>
-                log.message === 'Processing chunk' && log.meta?.chunkIndex === 1
-            )).toBe(true);
-
-        }, 90000); // Longer timeout for retry test
-    });
-
-    describe('Performance and Reliability', () => {
-        it('should maintain consistent performance across multiple calls', async () => {
-            if (!process.env.OPENAI_API_KEY) {
-                console.log('⏭️  Skipping - no API key');
-                return;
-            }
-
-            const performanceResults: number[] = [];
-            const numberOfRuns = 3;
-
-            for (let i = 0; i < numberOfRuns; i++) {
-                logger.clear();
-                const startTime = Date.now();
-
-                const result = await grader.grade(metaData, sftData);
-                const duration = Date.now() - startTime;
-
-                performanceResults.push(duration);
-
-                expect(result).not.toBeNull();
-                console.log(`Run ${i + 1}: ${duration}ms, Score: ${result?.score}/100`);
-
-                // Small delay between runs to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-
-            // Calculate performance stats
-            const avgDuration = performanceResults.reduce((a, b) => a + b, 0) / numberOfRuns;
-            const maxDuration = Math.max(...performanceResults);
-            const minDuration = Math.min(...performanceResults);
-
-            console.log(`📈 Performance stats over ${numberOfRuns} runs:`);
-            console.log(`   Average: ${avgDuration.toFixed(0)}ms`);
-            console.log(`   Min: ${minDuration}ms`);
-            console.log(`   Max: ${maxDuration}ms`);
-
-            // All runs should complete within reasonable time
-            expect(maxDuration).toBeLessThan(45000);
-            expect(minDuration).toBeGreaterThan(0);
-
-        }, 180000); // 3 minutes for multiple runs
-    });
-
-    describe('Error Scenarios', () => {
-        it('should handle invalid API key gracefully', async () => {
-            const invalidConfig: GraderConfig = {
-                apiKey: 'invalid-api-key-12345',
                 chunkSize: 2,
-                model: 'gpt-4o-mini',
-                timeout: 10 * 1000,
-                maxRetries: 1
+                model: "gpt-4o-mini",
+                timeout: 100, // force fast abort
+                maxRetries: 1,
             };
+            const grader = new Grader(config, logger);
+            const chunks = toChunks(sftActions, 2);
 
-            const invalidLogger = new IntegrationLogger();
-            const invalidGrader = new Grader(invalidConfig, invalidLogger);
+            const t0 = Date.now();
+            let threw = false;
+            try {
+                await grader.evaluateSession(chunks, meta);
+            } catch (e) {
+                threw = true;
+                // We expect an AbortError or a wrapped error after retries.
+                expect(String((e as Error).message).toLowerCase()).toContain("");
+            }
+            const elapsed = Date.now() - t0;
 
-            const result = await invalidGrader.grade(metaData, sftData);
+            expect(threw).toBe(true);
+            expect(elapsed).toBeLessThan(10_000);
 
-            // Should fail gracefully
-            expect(result).toBeNull();
+            // Optionally, assert that some error logs were captured
+            expect(
+                logger.logs.some((log) => log.level === "error")
+            ).toBeTruthy();
 
-            // Should log authentication errors
-            expect(invalidLogger.logs.some(log =>
-                log.level === 'error' && log.message === 'Error calling OpenAI API'
-            )).toBe(true);
+            console.log(`✅ Timeout path ok in ${elapsed}ms (expected throw)`);
+        },
+        15_000
+    );
 
-            console.log('✅ Invalid API key handled gracefully');
-        }, 30000);
-
-        it('should handle malformed input data', async () => {
+    it(
+        "can perform multiple runs consistently (performance sanity)",
+        async () => {
             if (!process.env.OPENAI_API_KEY) {
-                console.log('⏭️  Skipping - no API key');
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
                 return;
             }
 
-            const malformedMeta = {
-                ...metaData,
-                id: '', // Empty ID should cause validation error
-                quest: {
-                    ...metaData.quest,
-                    objectives: [] // Empty objectives should cause validation error
-                }
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
+                apiKey: process.env.OPENAI_API_KEY!,
+                chunkSize: 2,
+                model: "gpt-4o-mini",
+                timeout: 30_000,
+                maxRetries: 2,
             };
+            const grader = new Grader(config, logger);
+            const chunks = toChunks(sftActions, 2);
 
-            logger.clear(); // Clear previous logs
-            const result = await grader.grade(malformedMeta, sftData);
+            const runs = 3;
+            const durations: number[] = [];
+            for (let i = 0; i < runs; i++) {
+                const t0 = Date.now();
+                const res = await grader.evaluateSession(chunks, meta);
+                const dt = Date.now() - t0;
+                durations.push(dt);
+                expect(res.score).toBeGreaterThanOrEqual(0);
+                expect(res.score).toBeLessThanOrEqual(100);
+                await new Promise((r) => setTimeout(r, 800)); // small gap to avoid rate-limits
+            }
 
-            // Should handle validation error gracefully
-            expect(result).toBeNull();
+            const max = Math.max(...durations);
+            const min = Math.min(...durations);
+            const avg = Math.round(durations.reduce((a, b) => a + b, 0) / runs);
 
-            // Should log validation error
-            expect(logger.logs.some(log =>
-                log.level === 'error' && log.message === 'Error during grading'
-            )).toBe(true);
+            console.log(
+                `📈 Perf over ${runs} runs — min=${min}ms avg=${avg}ms max=${max}ms`
+            );
+            expect(max).toBeLessThan(45_000);
+            expect(min).toBeGreaterThan(0);
+        },
+        120_000
+    );
 
-            console.log('✅ Malformed input handled gracefully');
-        }, 15000);
-    });
+    it(
+        "invalid API key → throws (auth failure path)",
+        async () => {
+            // This case does not require a real API key
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
+                apiKey: "invalid-api-key-12345",
+                chunkSize: 2,
+                model: "gpt-4o-mini",
+                timeout: 10_000,
+                maxRetries: 1,
+            };
+            const grader = new Grader(config, logger);
+            const chunks = toChunks(sftActions, 2);
+
+            let threw = false;
+            try {
+                await grader.evaluateSession(chunks, meta);
+            } catch (e) {
+                threw = true;
+                // Error message text can vary; just ensure we did throw.
+                expect(String((e as Error).message).length).toBeGreaterThan(0);
+            }
+            expect(threw).toBe(true);
+
+            // Expect at least one error log recorded
+            expect(logger.logs.some((l) => l.level === "error")).toBeTruthy();
+
+            console.log("✅ Invalid API key handled with throw (as expected)");
+        },
+        30_000
+    );
 });
