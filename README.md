@@ -59,6 +59,7 @@ The pipeline includes a state-of-the-art grading mode that evaluates task comple
 - **Automatic retry logic**: Up to 3 attempts with intelligent delay patterns
 - **Structured logging** for better observability and debugging
 - **Graceful error handling** for network issues and API failures
+- **JSON Repair System**: Automatic recovery from OpenAI truncation issues (finish_reason="stop")
 
 ### **🧠 Intelligent Evaluation Framework**
 - **Holistic Scoring**: Modern 3-component evaluation system
@@ -69,6 +70,7 @@ The pipeline includes a state-of-the-art grading mode that evaluates task comple
 - **Deterministic Scoring**: Mathematically calculated scores from components (build-reproducible)
 - **Confidence scoring**: 0.0-1.0 confidence levels for each evaluation
 - **Chain-of-thought reasoning**: 6-step systematic evaluation process with brief observations
+- **Anti-Truncation Protection**: Multi-level JSON repair system for OpenAI API reliability
 
 ### **🎯 Advanced Features**
 - **Dynamic evaluation criteria**: Configurable scoring weights for different contexts
@@ -76,6 +78,10 @@ The pipeline includes a state-of-the-art grading mode that evaluates task comple
 - **Enhanced context awareness**: Adaptive evaluation for different interaction types
 - **Anti-hallucination safeguards**: Explicit instructions against inferring non-existent actions
 - **Modern prompt engineering**: Optimized for GPT-4o/Claude-3.5 with 2025 best practices
+- **JSON Truncation Recovery**: Automatic repair of incomplete OpenAI responses
+- **Robust Codeblock Filtering**: Enhanced regex-based filtering for various formats (CRLF, aliases, whitespace)
+- **Action Density Correction**: Accurate calculation based on total actions across all chunks
+- **Multimodal Optimization**: Low-detail image processing for cost/speed optimization
 
 ### Setup
 
@@ -184,14 +190,14 @@ bun test
 The project includes extensive tests for the modernized grading system:
 
 #### **Test Categories**
-- **Unit Tests**: 27 tests with mocked API calls (fast execution)
+- **Unit Tests**: 31 tests with mocked API calls (fast execution)
 - **Integration Tests**: Real OpenAI API validation (requires OPENAI_API_KEY)
 - **Coverage**: 100% of new APIs and features tested
-- **Feature Tests**: Structured Outputs, deterministic scoring, exponential backoff
+- **Feature Tests**: Structured Outputs, deterministic scoring, exponential backoff, JSON repair, robust filtering
 
 #### **Running Tests**
 ```bash
-# Unit tests (mocked, fast) - 27 tests, 107 assertions
+# Unit tests (mocked, fast) - 31 tests, 124 assertions
 bun run test:grading:unit
 
 # Integration tests (real API, requires OPENAI_API_KEY)
@@ -232,6 +238,22 @@ const delay = Math.min(8000, 500 * 2 ** (retries - 1)) + Math.random() * 250;
 // Retry 2: 1000-1250ms  
 // Retry 3: 2000-2250ms
 // Maximum: 8000ms + jitter
+```
+
+### **🛡️ JSON Repair System**
+```typescript
+// Multi-level protection against OpenAI truncation issues
+private repairTruncatedJson(text: string): any | null {
+  // Step 1: Extract balanced braces content
+  const balancedJson = this.extractBalancedBraces(text);
+  
+  // Step 2: Attempt basic repairs for common patterns
+  const repaired = this.attemptBasicJsonRepairs(balancedJson);
+  
+  return JSON.parse(repaired);
+}
+
+// Handles: missing braces, trailing commas, incomplete strings, nested truncation
 ```
 
 ## **🚀 Future-Proof Design**
