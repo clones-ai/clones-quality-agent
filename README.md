@@ -49,9 +49,16 @@ Additional options:
 - `--grade`: Enable grading mode to evaluate task completion (requires OPENAI_API_KEY)
 - `--chunk-size`: Number of messages per chunk when grading (default: 4)
 
-### Grading Mode
+## Grading Mode
 
-The pipeline includes a grading mode that evaluates task completion using GPT-4V. To use grading mode:
+The pipeline includes a robust grading mode that evaluates task completion using GPT-4V. The grading system has been completely modernized with:
+
+- **60-second timeout** on OpenAI API calls (prevents infinite hanging)
+- **Automatic retry logic** with exponential backoff (max 3 attempts)
+- **Structured logging** for better observability and debugging
+- **Graceful error handling** for network issues and API failures
+
+### Setup
 
 1. Set your OpenAI API key:
 
@@ -69,15 +76,19 @@ bun run src/index.ts -i . --grade
 bun run src/index.ts -d data -s session1,session2 -o output --grade
 ```
 
+### Grading Process
+
 The grader will:
 
-1. Look for an existing sft.json file in each session directory
+1. Look for an existing `sft.json` file in each session directory
 2. If found, grade it directly
-3. If not found, run the normal pipeline first to generate sft.json, then grade it
-4. Output a scores.json file containing:
+3. If not found, run the normal pipeline first to generate `sft.json`, then grade it
+4. Output a `scores.json` file containing:
    - A summary of completed tasks
    - A score from 0-100
    - Detailed reasoning for the score
+
+### Configuration Options
 
 You can adjust the chunk size (default 4) to control how many messages are processed at once:
 
@@ -91,4 +102,22 @@ To run the test suite, use the following command:
 
 ```bash
 bun test
+```
+
+### Grading-Specific Tests
+
+The project includes comprehensive tests for the grading system:
+
+```bash
+# Unit tests (mocked, fast)
+bun run test:grading:unit
+
+# Integration tests (real API, requires OPENAI_API_KEY)
+bun run test:grading:integration
+
+# All grading tests
+bun run test:grading:all
+
+# Run all tests including grading
+bun run test:grading
 ```
