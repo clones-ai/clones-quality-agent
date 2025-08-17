@@ -252,6 +252,10 @@ if (values.grade) {
   const productionLogger = new ProductionLogger();
   const parsed = Number(values['chunk-size']);
   const safeChunk = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+
+  // Collect metrics for each session
+  const allMetrics: any[] = [];
+
   const grader = new Grader({
     apiKey: process.env.OPENAI_API_KEY!,
     chunkSize: safeChunk,
@@ -261,6 +265,9 @@ if (values.grade) {
     rateLimiter: {
       maxTokens: 10,
       refillRate: 2
+    },
+    onMetrics: (metrics) => {
+      allMetrics.push(metrics);
     }
   }, productionLogger);
 
@@ -285,6 +292,81 @@ if (values.grade) {
   const successful = results.filter(r => r.status === 'fulfilled').length;
   const failed = results.filter(r => r.status === 'rejected').length;
   console.log(`\nCompleted: ${successful} successful, ${failed} failed out of ${sessions.length} sessions`);
+
+  // Generate metrics summary for each session
+  const sessionMetrics = sessions.map(sessionId => {
+    const sessionData = allMetrics.filter(m => m.context.sessionId === sessionId);
+
+    if (sessionData.length === 0) {
+      return {
+        sessionId,
+        status: 'failed',
+        error: 'No metrics collected (processing failed)',
+        totalRequests: 0,
+        totalTokens: 0,
+        totalDuration: 0,
+        averageRetries: 0
+      };
+    }
+
+    const totalTokens = sessionData.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0);
+    const totalDuration = sessionData.reduce((sum, m) => sum + m.timing.durationMs, 0);
+    const totalRetries = sessionData.reduce((sum, m) => sum + m.timing.retryCount, 0);
+    const successfulRequests = sessionData.filter(m => m.outcome === 'success').length;
+
+    return {
+      sessionId,
+      status: successfulRequests === sessionData.length ? 'success' : 'partial_failure',
+      totalRequests: sessionData.length,
+      successfulRequests,
+      failedRequests: sessionData.length - successfulRequests,
+      totalTokens,
+      totalDuration,
+      averageRetries: sessionData.length > 0 ? (totalRetries / sessionData.length) : 0,
+      details: sessionData.map(m => ({
+        responseId: m.responseId,
+        type: m.context.isFinal ? 'final' : 'chunk',
+        chunkIndex: m.context.chunkIndex,
+        outcome: m.outcome,
+        tokens: m.usage?.totalTokens || 0,
+        duration: m.timing.durationMs,
+        retries: m.timing.retryCount,
+        error: m.error?.message
+      }))
+    };
+  });
+
+  // Write metrics.json for each session
+  for (const sessionMetric of sessionMetrics) {
+    const metricsPath = path.join(outDir, sessionMetric.sessionId, 'metrics.json');
+    await Bun.write(metricsPath, JSON.stringify(sessionMetric, null, 2));
+    console.log(`📊 Metrics written to: ${metricsPath}`);
+  }
+
+  // Write global metrics summary
+  const globalMetrics = {
+    timestamp: new Date().toISOString(),
+    pipeline: {
+      version: "2.0.0",
+      mode: "grading",
+      sessions: sessions.length,
+      successful: successful,
+      failed: failed
+    },
+    totals: {
+      requests: allMetrics.length,
+      successfulRequests: allMetrics.filter(m => m.outcome === 'success').length,
+      tokens: allMetrics.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0),
+      duration: allMetrics.reduce((sum, m) => sum + m.timing.durationMs, 0),
+      retries: allMetrics.reduce((sum, m) => sum + m.timing.retryCount, 0)
+    },
+    rateLimiter: stats,
+    sessions: sessionMetrics
+  };
+
+  const globalMetricsPath = path.join(outDir, 'metrics.json');
+  await Bun.write(globalMetricsPath, JSON.stringify(globalMetrics, null, 2));
+  console.log(`📊 Global metrics written to: ${globalMetricsPath}`);
 
 } else {
   // Normal pipeline mode (non-grading, sequential)
