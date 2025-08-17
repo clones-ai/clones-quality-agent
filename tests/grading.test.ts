@@ -442,7 +442,11 @@ describe('Grader', () => {
                 { role: 'user', content: { type: 'image', data: 'img1' } },
                 { role: 'user', content: 'scroll(0, 100)' },
                 { role: 'user', content: 'click(1,1)' },
-                { role: 'user', content: '```python\nscroll(0, -50)\n```' }
+                { role: 'user', content: '```python\nscroll(0, -50)\n```' },
+                { role: 'user', content: '```js\r\nscroll(100, 0)\r\n```' }, // CRLF line endings
+                { role: 'user', content: '```\nscroll(50, 50)\n```' },      // No language specified
+                { role: 'user', content: '```PYTHON\nscroll(0, 200)\n```' }, // Uppercase language
+                { role: 'user', content: '```typescript\n  scroll(10, 20)  \n```' } // Whitespace around scroll
             ];
 
             const finalEvaluation = JSON.stringify({
@@ -466,13 +470,62 @@ describe('Grader', () => {
             expect(result?.score).toBe(84); // Calculated: 80*0.5 + 85*0.3 + 90*0.2 = 40 + 25.5 + 18 = 83.5 ≈ 84
             expect(result?.modelScoreRaw).toBe(85);
 
-            // Should only process non-scroll messages (2 messages = 1 chunk with chunkSize 2)
+            // Should only process non-scroll messages (2 messages: 1 image + 1 click = 1 chunk with chunkSize 2)
+            // All scroll messages should be filtered out (5 total scroll messages in various formats)
             expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(1);
 
             // Check filtering logs
             expect(testLogger.logs.some(log =>
                 log.level === 'debug' && log.message === 'Messages filtered'
             )).toBe(true);
+        });
+
+        it('should handle various code block formats robustly', async () => {
+            const codeBlockVariations: readonly Message[] = [
+                { role: 'user', content: { type: 'image', data: 'img1' } },
+                { role: 'user', content: '```python\nclick(1,1)\n```' },           // Standard Python
+                { role: 'user', content: '```js\r\nclick(2,2)\r\n```' },           // JavaScript with CRLF
+                { role: 'user', content: '```\nclick(3,3)\n```' },                 // No language specified
+                { role: 'user', content: '```TYPESCRIPT\nclick(4,4)\n```' },       // Uppercase language
+                { role: 'user', content: '```py\n  click(5,5)  \n```' },           // Python alias with whitespace
+                { role: 'user', content: 'click(6,6)' },                           // No code block
+                // These should be filtered out (scroll commands)
+                { role: 'user', content: '```bash\nscroll(0, 100)\n```' },         // Bash scroll
+                { role: 'user', content: '```\r\nscroll(50, 0)\r\n```' },          // No lang + CRLF
+                { role: 'user', content: '```SHELL\n\tscroll(0, -50)\t\n```' }      // Uppercase + tabs
+            ];
+
+            const finalEvaluation = JSON.stringify({
+                summary: "Final Summary",
+                observations: "Observations from robust parsing",
+                score: 88,
+                reasoning: "Final Reasoning",
+                confidence: 0.95,
+                outcomeAchievement: 85,
+                processQuality: 90,
+                efficiency: 88
+            });
+
+            mockChatCompletionsCreate.mockResolvedValue({
+                choices: [{ message: { content: finalEvaluation } }]
+            });
+
+            const result = await grader.grade(metaData, codeBlockVariations);
+
+            expect(result).not.toBeNull();
+            expect(result?.score).toBe(87); // Calculated: 85*0.5 + 90*0.3 + 88*0.2 = 42.5 + 27 + 17.6 = 87.1 ≈ 87
+            expect(result?.modelScoreRaw).toBe(88);
+
+            // Should process 7 non-scroll messages (1 image + 6 click commands)
+            // With chunkSize=2, that's 4 chunks total (2+2+2+1)
+            expect(mockChatCompletionsCreate).toHaveBeenCalledTimes(4);
+
+            // Verify filtering worked - should have filtered out 3 scroll commands
+            const filteredLog = testLogger.logs.find(log =>
+                log.level === 'debug' && log.message === 'Messages filtered'
+            );
+            expect(filteredLog?.meta?.originalCount).toBe(10); // Total messages
+            expect(filteredLog?.meta?.filteredCount).toBe(7);  // After filtering
         });
     });
 
