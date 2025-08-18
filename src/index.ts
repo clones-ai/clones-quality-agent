@@ -163,9 +163,11 @@ async function gradeSftFile(
 ): Promise<void> {
   console.log(`Grading sft.json for session: ${session}`);
   const sftMessages = await Bun.file(sftPath).json();
+  console.log('sftMessages', sftMessages);
   let metaJson: any = {};
   try {
     metaJson = await Bun.file(metaPath).json();
+    console.log('metaJson', metaJson);
   } catch { }
   const meta: MetaData = {
     sessionId: session,
