@@ -148,244 +148,223 @@ const pipeline = new Pipeline({
 
 console.log(`Starting processing of ${sessions.length} sessions...`);
 
-// Function to process a single session
+async function gradeSftFile(
+  grader: Grader,
+  session: string,
+  sftPath: string,
+  metaPath: string,
+  outDir: string,
+  chunkSize: number,
+  format: string
+): Promise<void> {
+  console.log(`Grading sft.json for session: ${session}`);
+  const sftMessages = await Bun.file(sftPath).json();
+  let metaJson: any = {};
+  try {
+    metaJson = await Bun.file(metaPath).json();
+  } catch { }
+  const meta: MetaData = {
+    sessionId: session,
+    platform: format === 'desktop' ? 'desktop' : 'web',
+    taskDescription:
+      metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
+  };
+  const chunks = sftToChunks(sftMessages, chunkSize);
+  const result = await grader.evaluateSession(chunks, meta);
+  if (result) {
+    console.log('\nGrading complete!');
+    console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+    console.log('\nScore Breakdown:');
+    console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
+    console.log(`- Process Quality: ${result.processQuality}/100`);
+    console.log(`- Efficiency: ${result.efficiency}/100`);
+    console.log('\nSummary:');
+    console.log(result.summary);
+    console.log('\nObservations:');
+    console.log(result.observations);
+    console.log('\nReasoning:');
+    console.log(result.reasoning);
+
+    await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
+  } else {
+    console.error('Failed to grade session');
+  }
+}
+
+async function runPipelineAndFormat(
+  pipeline: Pipeline,
+  session: string,
+  outDir: string
+): Promise<void> {
+  const results = await pipeline.process(session);
+  const html = visualizeEvents(results);
+  await Bun.write(path.join(outDir, session, `results.html`), html);
+  await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
+
+  // Format messages
+  const formatter = new MessageFormatter();
+  const messages = await formatter.process(results);
+
+  // Write formatted messages
+  const msg_html = visualizeMessages(messages);
+  await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
+  await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
+}
+
 async function processSession(
   session: string,
-  grader: Grader,
   pipeline: Pipeline,
   dataDir: string,
   outDir: string,
   format: string,
-  chunkSize: number
+  chunkSize: number,
+  grader?: Grader
 ): Promise<void> {
   console.log(`\nProcessing session: ${session}`);
   const sftPath = path.join(dataDir, session, 'sft.json');
   const metaPath = path.join(dataDir, session, 'meta.json');
+  const sftExists = await Bun.file(sftPath).exists();
 
-  // Check if sft.json exists
-  try {
-    await Bun.file(sftPath).json();
-
-    // Grade existing sft.json
-    console.log('Found existing sft.json, grading...');
-    const sftMessages = await Bun.file(sftPath).json();
-    let metaJson: any = {};
-    try { metaJson = await Bun.file(metaPath).json(); } catch { }
-    const meta: MetaData = {
-      sessionId: session,
-      platform: (format === 'desktop' ? 'desktop' : 'web'),
-      taskDescription: metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
-    };
-    const chunks = sftToChunks(sftMessages, chunkSize);
-    const result = await grader.evaluateSession(chunks, meta);
-    if (result) {
-      console.log('\nGrading complete!');
-      console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-      console.log('\nScore Breakdown:');
-      console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
-      console.log(`- Process Quality: ${result.processQuality}/100`);
-      console.log(`- Efficiency: ${result.efficiency}/100`);
-      console.log('\nSummary:');
-      console.log(result.summary);
-      console.log('\nObservations:');
-      console.log(result.observations);
-      console.log('\nReasoning:');
-      console.log(result.reasoning);
-
-      // Write scores to file
-      await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
-    } else {
-      console.error('Failed to grade session');
-    }
-  } catch (error) {
-    // Run normal pipeline if sft.json doesn't exist
+  if (!sftExists) {
     console.log('No sft.json found, running pipeline...');
-    const results = await pipeline.process(session);
-    const html = visualizeEvents(results);
-    await Bun.write(path.join(outDir, session, `results.html`), html);
-    await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
+    await runPipelineAndFormat(pipeline, session, outDir);
+  } else {
+    console.log('Found existing sft.json.');
+  }
 
-    // Format messages
-    const formatter = new MessageFormatter();
-    const messages = await formatter.process(results);
-
-    // Write formatted messages
-    const msg_html = visualizeMessages(messages);
-    await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
-    await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
-
-    // Now grade the newly created sft.json
-    console.log('\nGrading new sft.json...');
-    const sftMessages2 = await Bun.file(sftPath).json();
-    let metaJson2: any = {};
-    try { metaJson2 = await Bun.file(metaPath).json(); } catch { }
-    const meta2: MetaData = {
-      sessionId: session,
-      platform: (format === 'desktop' ? 'desktop' : 'web'),
-      taskDescription: metaJson2?.quest?.title ?? metaJson2?.title ?? metaJson2?.description ?? undefined
-    };
-    const chunks2 = sftToChunks(sftMessages2, chunkSize);
-    const result = await grader.evaluateSession(chunks2, meta2);
-    if (result) {
-      console.log('\nGrading complete!');
-      console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
-      console.log('\nScore Breakdown:');
-      console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
-      console.log(`- Process Quality: ${result.processQuality}/100`);
-      console.log(`- Efficiency: ${result.efficiency}/100`);
-      console.log('\nSummary:');
-      console.log(result.summary);
-      console.log('\nObservations:');
-      console.log(result.observations);
-      console.log('\nReasoning:');
-      console.log(result.reasoning);
-
-      // Write scores to file
-      await Bun.write(path.join(outDir, session, 'scores.json'), JSON.stringify(result, null, 2));
-    } else {
-      console.error('Failed to grade session');
-    }
+  if (grader) {
+    await gradeSftFile(grader, session, sftPath, metaPath, outDir, chunkSize, format);
   }
 }
 
-if (values.grade) {
-  // Grading mode with parallelization
-  const productionLogger = new ProductionLogger();
-  const parsed = Number(values['chunk-size']);
-  const safeChunk = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+async function processAllSessions() {
+  const chunkSize = Number.isFinite(Number(values['chunk-size']))
+    ? Number(values['chunk-size'])
+    : 4;
 
-  // Collect metrics for each session
-  const allMetrics: any[] = [];
+  if (values.grade) {
+    const productionLogger = new ProductionLogger();
+    const allMetrics: any[] = [];
+    const grader = new Grader(
+      {
+        apiKey: process.env.OPENAI_API_KEY!,
+        chunkSize,
+        timeout: 60_000,
+        maxRetries: 3,
+        seed: 42,
+        rateLimiter: { maxTokens: 10, refillRate: 2 },
+        onMetrics: metrics => {
+          allMetrics.push(metrics);
+        }
+      },
+      productionLogger
+    );
 
-  const grader = new Grader({
-    apiKey: process.env.OPENAI_API_KEY!,
-    chunkSize: safeChunk,
-    timeout: 60_000,
-    maxRetries: 3,
-    seed: 42,
-    rateLimiter: {
-      maxTokens: 10,
-      refillRate: 2
-    },
-    onMetrics: (metrics) => {
-      allMetrics.push(metrics);
-    }
-  }, productionLogger);
+    console.log(`Starting parallel processing of ${sessions.length} sessions...`);
+    const sessionPromises = sessions.map(session =>
+      processSession(session, pipeline, dataDir, outDir, format, chunkSize, grader).catch(
+        error => {
+          console.error(`Error processing session ${session}:`, error.message);
+          return null;
+        }
+      )
+    );
+    await Promise.allSettled(sessionPromises);
 
-  console.log(`Starting parallel processing of ${sessions.length} sessions...`);
+    const stats = grader.getRateLimiterStats();
+    console.log(
+      `\nRate limiter stats: ${stats.tokens} tokens remaining, ${stats.queueLength} requests queued`
+    );
 
-  // Process sessions in parallel with rate limiting handled by the grader
-  const sessionPromises = sessions.map(session =>
-    processSession(session, grader, pipeline, dataDir, outDir, format, safeChunk || 4)
-      .catch(error => {
-        console.error(`Error processing session ${session}:`, error.message);
-        return null; // Don't fail the entire batch
-      })
-  );
+    const results = await Promise.allSettled(sessionPromises);
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = sessions.length - successful;
+    console.log(
+      `\nCompleted: ${successful} successful, ${failed} failed out of ${sessions.length} sessions`
+    );
 
-  const results = await Promise.allSettled(sessionPromises);
+    // Generate metrics summary for each session
+    const sessionMetrics = sessions.map(sessionId => {
+      const sessionData = allMetrics.filter(m => m.context.sessionId === sessionId);
 
-  // Log rate limiter stats
-  const stats = grader.getRateLimiterStats();
-  console.log(`\nRate limiter stats: ${stats.tokens} tokens remaining, ${stats.queueLength} requests queued`);
+      if (sessionData.length === 0) {
+        return {
+          sessionId,
+          status: 'failed',
+          error: 'No metrics collected (processing failed)',
+          totalRequests: 0,
+          totalTokens: 0,
+          totalDuration: 0,
+          averageRetries: 0
+        };
+      }
 
-  // Report results
-  const successful = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
-  console.log(`\nCompleted: ${successful} successful, ${failed} failed out of ${sessions.length} sessions`);
+      const totalTokens = sessionData.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0);
+      const totalDuration = sessionData.reduce((sum, m) => sum + m.timing.durationMs, 0);
+      const totalRetries = sessionData.reduce((sum, m) => sum + m.timing.retryCount, 0);
+      const successfulRequests = sessionData.filter(m => m.outcome === 'success').length;
 
-  // Generate metrics summary for each session
-  const sessionMetrics = sessions.map(sessionId => {
-    const sessionData = allMetrics.filter(m => m.context.sessionId === sessionId);
-
-    if (sessionData.length === 0) {
       return {
         sessionId,
-        status: 'failed',
-        error: 'No metrics collected (processing failed)',
-        totalRequests: 0,
-        totalTokens: 0,
-        totalDuration: 0,
-        averageRetries: 0
+        status: successfulRequests === sessionData.length ? 'success' : 'partial_failure',
+        totalRequests: sessionData.length,
+        successfulRequests,
+        failedRequests: sessionData.length - successfulRequests,
+        totalTokens,
+        totalDuration,
+        averageRetries: sessionData.length > 0 ? (totalRetries / sessionData.length) : 0,
+        details: sessionData.map(m => ({
+          responseId: m.responseId,
+          type: m.context.isFinal ? 'final' : 'chunk',
+          chunkIndex: m.context.chunkIndex,
+          outcome: m.outcome,
+          tokens: m.usage?.totalTokens || 0,
+          duration: m.timing.durationMs,
+          retries: m.timing.retryCount,
+          error: m.error?.message
+        }))
       };
+    });
+
+    // Write metrics.json for each session
+    for (const sessionMetric of sessionMetrics) {
+      const metricsPath = path.join(outDir, sessionMetric.sessionId, 'metrics.json');
+      await Bun.write(metricsPath, JSON.stringify(sessionMetric, null, 2));
+      console.log(`📊 Metrics written to: ${metricsPath}`);
     }
 
-    const totalTokens = sessionData.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0);
-    const totalDuration = sessionData.reduce((sum, m) => sum + m.timing.durationMs, 0);
-    const totalRetries = sessionData.reduce((sum, m) => sum + m.timing.retryCount, 0);
-    const successfulRequests = sessionData.filter(m => m.outcome === 'success').length;
-
-    return {
-      sessionId,
-      status: successfulRequests === sessionData.length ? 'success' : 'partial_failure',
-      totalRequests: sessionData.length,
-      successfulRequests,
-      failedRequests: sessionData.length - successfulRequests,
-      totalTokens,
-      totalDuration,
-      averageRetries: sessionData.length > 0 ? (totalRetries / sessionData.length) : 0,
-      details: sessionData.map(m => ({
-        responseId: m.responseId,
-        type: m.context.isFinal ? 'final' : 'chunk',
-        chunkIndex: m.context.chunkIndex,
-        outcome: m.outcome,
-        tokens: m.usage?.totalTokens || 0,
-        duration: m.timing.durationMs,
-        retries: m.timing.retryCount,
-        error: m.error?.message
-      }))
+    // Write global metrics summary
+    const globalMetrics = {
+      timestamp: new Date().toISOString(),
+      pipeline: {
+        version: "2.0.0",
+        mode: "grading",
+        sessions: sessions.length,
+        successful: successful,
+        failed: failed
+      },
+      totals: {
+        requests: allMetrics.length,
+        successfulRequests: allMetrics.filter(m => m.outcome === 'success').length,
+        tokens: allMetrics.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0),
+        duration: allMetrics.reduce((sum, m) => sum + m.timing.durationMs, 0),
+        retries: allMetrics.reduce((sum, m) => sum + m.timing.retryCount, 0)
+      },
+      rateLimiter: stats,
+      sessions: sessionMetrics
     };
-  });
 
-  // Write metrics.json for each session
-  for (const sessionMetric of sessionMetrics) {
-    const metricsPath = path.join(outDir, sessionMetric.sessionId, 'metrics.json');
-    await Bun.write(metricsPath, JSON.stringify(sessionMetric, null, 2));
-    console.log(`📊 Metrics written to: ${metricsPath}`);
-  }
-
-  // Write global metrics summary
-  const globalMetrics = {
-    timestamp: new Date().toISOString(),
-    pipeline: {
-      version: "2.0.0",
-      mode: "grading",
-      sessions: sessions.length,
-      successful: successful,
-      failed: failed
-    },
-    totals: {
-      requests: allMetrics.length,
-      successfulRequests: allMetrics.filter(m => m.outcome === 'success').length,
-      tokens: allMetrics.reduce((sum, m) => sum + (m.usage?.totalTokens || 0), 0),
-      duration: allMetrics.reduce((sum, m) => sum + m.timing.durationMs, 0),
-      retries: allMetrics.reduce((sum, m) => sum + m.timing.retryCount, 0)
-    },
-    rateLimiter: stats,
-    sessions: sessionMetrics
-  };
-
-  const globalMetricsPath = path.join(outDir, 'metrics.json');
-  await Bun.write(globalMetricsPath, JSON.stringify(globalMetrics, null, 2));
-  console.log(`📊 Global metrics written to: ${globalMetricsPath}`);
-
-} else {
-  // Normal pipeline mode (non-grading, sequential)
-  for (const session of sessions) {
-    const results = await pipeline.process(session);
-    const html = visualizeEvents(results);
-    await Bun.write(path.join(outDir, session, `results.html`), html);
-    await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
-
-    // Then format them into messages
-    const formatter = new MessageFormatter();
-    const messages = await formatter.process(results);
-
-    // Write formatted messages visualization
-    const msg_html = visualizeMessages(messages);
-    await Bun.write(path.join(outDir, session, `sft.html`), msg_html);
-    await Bun.write(path.join(outDir, session, `sft.json`), JSON.stringify(messages, null, 2));
+    const globalMetricsPath = path.join(outDir, 'metrics.json');
+    await Bun.write(globalMetricsPath, JSON.stringify(globalMetrics, null, 2));
+    console.log(`📊 Global metrics written to: ${globalMetricsPath}`);
+  } else {
+    console.log(`Starting sequential processing of ${sessions.length} sessions...`);
+    for (const session of sessions) {
+      await processSession(session, pipeline, dataDir, outDir, format, chunkSize);
+    }
   }
 }
 
-console.log(`Wrote sessions to ${outDir}`);
+processAllSessions().then(() => {
+  console.log(`Wrote sessions to ${outDir}`);
+});
