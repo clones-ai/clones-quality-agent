@@ -196,6 +196,7 @@ export class Grader {
 
     for (let i = 0; i < chunks.length; i++) {
       const summary = await this.evaluateChunk(chunks[i], meta, prevSummary, i, chunks.length);
+      console.log('summary', summary);
       summaries.push(summary);
       prevSummary = summary;
     }
