@@ -13,6 +13,10 @@ import path from 'path';
 import { Grader } from './stages/grading/grader';
 import { GraderLogger, Chunk, MetaData } from './stages/grading/grader/types';
 
+import packageJson from '../package.json';
+
+console.log(`Pipeline version: ${packageJson.version}`);
+
 // Optional: Create a custom logger for production use
 class ProductionLogger implements GraderLogger {
   info(message: string, err?: Error, meta?: Record<string, unknown>): void {
