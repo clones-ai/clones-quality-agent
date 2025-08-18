@@ -1,11 +1,14 @@
 import { describe, it, expect } from "bun:test";
+import { spawn } from "child_process";
+import * as fs from "fs/promises";
+import * as path from "path";
 import {
-    Grader,
-    type GraderConfig,
-    type GraderLogger,
-    type Chunk,
-    type MetaData,
-} from "../src/stages/grading/grader";
+    GraderConfig,
+    GraderLogger,
+    Chunk,
+    MetaData,
+} from "../src/stages/grading/grader/types";
+import { Grader } from "../src/stages/grading/grader";
 
 /** Simple integration logger implementing the GraderLogger interface. */
 class IntegrationLogger implements GraderLogger {

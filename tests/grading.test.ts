@@ -1,17 +1,16 @@
-// tests/grading.test.ts
-import { describe, test, expect, beforeEach } from "bun:test";
-// 🔧 adjust the import path to your project layout
+import { describe, test, expect } from "bun:test";
 import {
-    Grader,
-    type Chunk,
-    type GraderConfig,
-    type RequestMetrics,
-    type MetricsHook,
+    Chunk,
+    GraderConfig,
+    RequestMetrics,
+    MetricsHook,
+} from "../src/stages/grading/grader/types";
+import {
     TimeoutError,
     PermanentError,
-    TransientError,
-    GraderError
-} from "../src/stages/grading/grader";
+    TransientError
+} from "../src/stages/grading/grader/errors";
+import { Grader } from "../src/stages/grading/grader";
 
 // Minimal spy helper using Bun's built-in function mocking
 function mock(fn: (...args: any[]) => any) {
