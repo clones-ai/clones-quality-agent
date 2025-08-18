@@ -316,6 +316,7 @@ export class Grader {
     while (attempt < this.maxRetries) {
       try {
         const response = await this.createChatCompletionWithTimeout(messages, isFinal);
+        console.log('callModelWithRetries: ', response);
         const text = this.extractMessageText(response);
         if (!text || !text.trim()) {
           throw new Error("Empty response from model.");
@@ -588,6 +589,7 @@ export class Grader {
 
   private validateFinalResponse(data: unknown): FinalEvaluation | null {
     try {
+      console.log('validateFinalResponse', data);
       return FinalEvaluationSchema.parse(data);
     } catch (e) {
       this.logger.error("Final response validation failed.", e as Error, {
