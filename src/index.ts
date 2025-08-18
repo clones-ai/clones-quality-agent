@@ -10,7 +10,8 @@ import { GymDesktopExtractor } from './stages/extraction/simple-extractor';
 import { MessageFormatter } from './stages/formatting/message-formatter';
 import path from 'path';
 
-import { Grader, type GraderLogger, type Chunk, type MetaData } from './stages/grading/grader';
+import { Grader } from './stages/grading/grader';
+import { GraderLogger, Chunk, MetaData } from './stages/grading/grader/types';
 
 // Optional: Create a custom logger for production use
 class ProductionLogger implements GraderLogger {
