@@ -225,9 +225,12 @@ export class Grader {
       /* isFinal */ false,
       { sessionId: meta.sessionId, chunkIndex, totalChunks }
     );
+    console.log(responseText);
 
     const parsed = this.parseJsonResponse(responseText);
+    console.log(parsed);
     const validated = this.validateChunkResponse(parsed);
+    console.log(validated);
 
     if (!validated) {
       this.logger.warn(
@@ -249,6 +252,7 @@ export class Grader {
       summaries.length - 1,
       summaries.length
     );
+    console.log(systemPrompt);
 
     const finalUserText =
       `You are given the list of chunk summaries for the full session.\n` +
@@ -265,9 +269,12 @@ export class Grader {
       /* isFinal */ true,
       { sessionId: meta.sessionId }
     );
+    console.log(responseText);
 
     const parsed = this.parseJsonResponse(responseText);
+    console.log(parsed);
     const validated = this.validateFinalResponse(parsed);
+    console.log(validated);
 
     if (!validated) {
       throw new PermanentError("Final evaluation validation failed: response does not match expected schema");

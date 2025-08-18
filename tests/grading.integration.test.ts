@@ -64,6 +64,94 @@ const meta: MetaData = {
     taskDescription: 'Navigate to google.com and search for "OpenAI"',
 };
 
+describe("Grader Pipeline (spawn)", () => {
+    it(
+        "grades a real session and checks for metrics",
+        async () => {
+            if (!process.env.OPENAI_API_KEY) {
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
+                return;
+            }
+
+            const testSessionDir = "data/tests/grader/20250817_232256";
+            const scoresPath = path.join(testSessionDir, "scores.json");
+            const metricsPath = path.join(testSessionDir, "metrics.json");
+
+            // Clean up previous run's output
+            await fs.rm(scoresPath, { force: true });
+            await fs.rm(metricsPath, { force: true });
+
+            await new Promise<void>((resolve, reject) => {
+                const pipeline = spawn("bun", [
+                    "run",
+                    "src/index.ts",
+                    "-f",
+                    "desktop",
+                    "-i",
+                    testSessionDir,
+                    "--grade",
+                ]);
+
+                let stdout = "";
+                let stderr = "";
+
+                pipeline.stdout.on("data", (data) => {
+                    stdout += data;
+                    console.log("▶️", data.toString().trim());
+                });
+
+                pipeline.stderr.on("data", (data) => {
+                    stderr += data;
+                    console.error("⛔️", data.toString().trim());
+                });
+
+                pipeline.on("close", (code: number) => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(
+                            new Error(
+                                `Pipeline failed:\nstdout: ${stdout}\nstderr: ${stderr}`
+                            )
+                        );
+                    }
+                });
+
+                pipeline.on("error", (err) => {
+                    reject(err);
+                });
+            });
+
+            // Check scores.json
+            const scoresContent = await fs.readFile(scoresPath, "utf8");
+            const gradeResult = JSON.parse(scoresContent);
+
+            expect(gradeResult.summary.length).toBeGreaterThan(0);
+            expect(gradeResult.observations.length).toBeGreaterThan(0);
+            expect(gradeResult.reasoning.length).toBeGreaterThan(0);
+            expect(gradeResult.score).toBeGreaterThanOrEqual(0);
+            expect(gradeResult.score).toBeLessThanOrEqual(100);
+            expect(gradeResult.outcomeAchievement).toBeGreaterThanOrEqual(0);
+            expect(gradeResult.outcomeAchievement).toBeLessThanOrEqual(100);
+            expect(gradeResult.processQuality).toBeGreaterThanOrEqual(0);
+            expect(gradeResult.processQuality).toBeLessThanOrEqual(100);
+            expect(gradeResult.efficiency).toBeGreaterThanOrEqual(0);
+            expect(gradeResult.efficiency).toBeLessThanOrEqual(100);
+            expect(gradeResult.confidence).toBeGreaterThanOrEqual(0);
+            expect(gradeResult.confidence).toBeLessThanOrEqual(1);
+
+            // Check metrics.json
+            const metricsContent = await fs.readFile(metricsPath, "utf8");
+            const metricsResult = JSON.parse(metricsContent);
+            expect(metricsResult).toBeDefined();
+            expect(metricsResult.totalTokens).toBeGreaterThan(0);
+
+            console.log("✅ Pipeline test completed successfully.");
+        },
+        120_000 // 2 minute timeout for the whole test
+    );
+});
+
 describe("Grader Integration (real API)", () => {
     it(
         "smoke: evaluates a short session successfully",
