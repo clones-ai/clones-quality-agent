@@ -6,6 +6,9 @@ export const DEFAULT_CRITERIA: EvaluationCriteria = {
     efficiency: { weight: 0.2 },
 };
 
+console.log('LOADED_CONSTANTS_FILE', import.meta?.url || __filename);
+console.log('DEFAULT_CRITERIA_IN_FILE', DEFAULT_CRITERIA);
+
 export const DEFAULT_MODEL = "gpt-4o";
 export const DEFAULT_TIMEOUT_MS = 60_000;
 export const DEFAULT_MAX_RETRIES = 3;
