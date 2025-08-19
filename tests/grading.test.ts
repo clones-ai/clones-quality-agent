@@ -1550,7 +1550,7 @@ describe("Grader - observability and metrics", () => {
 
         const { grader } = makeGrader({
             onMetrics: metricsHook,
-            maxRetries: 3  // Augmenter pour permettre le succès au 3ème essai
+            maxRetries: 3  // Increase to allow success on the 3rd attempt
         });
 
         let callCount = 0;

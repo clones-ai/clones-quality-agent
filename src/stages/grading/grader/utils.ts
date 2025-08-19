@@ -68,7 +68,7 @@ export const redact = (s: string) => {
         .replace(/(?:mongodb|mysql|postgresql|postgres):\/\/[^\s]+/gi, "[DATABASE-URL]")
 
         // Generic secrets (common patterns)
-        .replace(/(?:password|passwd|pwd|secret|token|key)\s*[:=]\s*['"]*[A-Za-z0-9!@#$%^&*()_+\-=\[\]{}|;:,.<>?]+['"]*(?:\s|$)/gi,
+        .replace(/\b(?:password|passwd|pwd|secret|token|key)\b\s*[:=]\s*['"]*[A-Za-z0-9!@#$%^&*()_+\-=\[\]{}|;:,.<>?]+['"]*(?:\s|$)/gi,
             (match) => match.replace(/['"]*[A-Za-z0-9!@#$%^&*()_+\-=\[\]{}|;:,.<>?]+['"]*/, "[REDACTED]"))
 
         // Base64 patterns (potential sensitive data)
