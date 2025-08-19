@@ -362,8 +362,8 @@ describe("Grader - criteria updates affect deterministic score", () => {
         expect(res.score).toBe(50);
 
         grader.updateEvaluationCriteria({
-            outcomeAchievement: { weight: 0.6 },
-            efficiency: { weight: 0.1 },
+            outcomeAchievement: { weight: 60 },
+            efficiency: { weight: 10 },
         });
 
         res = await grader.evaluateSession([[{ type: "text", text: "B" }]], {
@@ -372,14 +372,14 @@ describe("Grader - criteria updates affect deterministic score", () => {
         expect(res.score).toBe(50); // components equal, still 50
     });
 
-    test("normalizes weights automatically to sum to 1.0", () => {
+    test("normalizes weights automatically to sum to 100", () => {
         const { grader } = makeGrader();
 
-        // Weights that don't sum to 1.0 should be normalized
+        // Weights that don't sum to 100 should be normalized
         grader.updateEvaluationCriteria({
-            outcomeAchievement: { weight: 0.7 },
-            processQuality: { weight: 0.3 },
-            efficiency: { weight: 0.3 },
+            outcomeAchievement: { weight: 70 },
+            processQuality: { weight: 30 },
+            efficiency: { weight: 30 },
         });
 
         const criteria = grader.getEvaluationCriteria();
@@ -387,30 +387,31 @@ describe("Grader - criteria updates affect deterministic score", () => {
             criteria.processQuality.weight +
             criteria.efficiency.weight;
 
-        // Should be normalized to exactly 1.0
-        expect(Math.abs(sum - 1.0)).toBeLessThan(1e-10);
+        // Should be normalized to exactly 100
+        expect(Math.abs(sum - 100)).toBeLessThan(1e-10);
 
-        // Proportions should be maintained (0.7:0.3:0.3 = ~0.54:0.23:0.23)
-        expect(criteria.outcomeAchievement.weight).toBeCloseTo(0.7 / 1.3, 6);
-        expect(criteria.processQuality.weight).toBeCloseTo(0.3 / 1.3, 6);
-        expect(criteria.efficiency.weight).toBeCloseTo(0.3 / 1.3, 6);
+        // Proportions should be maintained (70:30:30 = ~54:23:23)
+        // Using lower precision due to Math.round() in normalization
+        expect(criteria.outcomeAchievement.weight).toBeCloseTo((70 / 130) * 100, 0);
+        expect(criteria.processQuality.weight).toBeCloseTo((30 / 130) * 100, 0);
+        expect(criteria.efficiency.weight).toBeCloseTo((30 / 130) * 100, 0);
     });
 
     test("rejects invalid weights (negative or non-finite)", () => {
         const { grader } = makeGrader();
         expect(() =>
             grader.updateEvaluationCriteria({
-                outcomeAchievement: { weight: -0.5 },
-                processQuality: { weight: 0.3 },
-                efficiency: { weight: 0.3 },
+                outcomeAchievement: { weight: -50 },
+                processQuality: { weight: 30 },
+                efficiency: { weight: 20 },
             })
         ).toThrow(/must be positive and finite/i);
 
         expect(() =>
             grader.updateEvaluationCriteria({
                 outcomeAchievement: { weight: NaN },
-                processQuality: { weight: 0.3 },
-                efficiency: { weight: 0.3 },
+                processQuality: { weight: 30 },
+                efficiency: { weight: 20 },
             })
         ).toThrow(/must be positive and finite/i);
     });
