@@ -1,0 +1,35 @@
+{
+  "id": "20250818_135137",
+  "timestamp": "2025-08-18T13:51:37.719819+02:00",
+  "duration_seconds": 53,
+  "status": "completed",
+  "reason": "done",
+  "title": "Configure Docker container resources",
+  "description": "",
+  "platform": "macos",
+  "arch": "aarch64",
+  "version": "15.6.0",
+  "locale": "fr-FR",
+  "primary_monitor": {
+    "width": 2880,
+    "height": 1800
+  },
+  "quest": {
+    "title": "Configure Docker container resources",
+    "app": "Docker Desktop",
+    "icon_url": "https://s2.googleusercontent.com/s2/favicons?domain=docker.com&sz=64",
+    "objectives": [
+      "Open Docker Desktop on your machine",
+      "Access settings menu within the Docker Desktop",
+      "Navigate to Resources section",
+      "Adjust memory and CPU settings for containers"
+    ],
+    "content": "Hi! You mentioned you need help with setting up resource allocation for containers in Docker Desktop. Let's go step-by-step. Do you already have Docker Desktop open?",
+    "pool_id": "688787554c3d6fdf7ac1aceb",
+    "reward": {
+      "time": 1755517860000,
+      "max_reward": 10
+    },
+    "task_id": "688787554c3d6fdf7ac1acf0"
+  }
+}
