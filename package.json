@@ -1,7 +1,7 @@
 {
-  "name": "pipeline",
-  "version": "2.0.0",
-  "main": "process.js",
+  "name": "clones-quality-agent",
+  "version": "2.0.1",
+  "main": "src/index.ts",
   "scripts": {
     "test": "bun test",
     "test:grading": "bun run scripts/test-grading.ts",
@@ -11,9 +11,9 @@
     "start": "bun run src/index.ts",
     "stats": "bun run scripts/stats.ts",
     "download": "bun run scripts/download.ts",
-    "build:windows": "bun build --compile --target=bun-windows-x64 ./src/index.ts --outfile target/pipeline-win-x64.exe",
-    "build:macos": "bun build --compile --target=bun-macos-arm64 ./src/index.ts --outfile target/pipeline-macos-arm64",
-    "build:linux": "bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile target/pipeline-linux-x64",
+    "build:windows": "bun build --compile --target=bun-windows-x64 ./src/index.ts --outfile target/clones-quality-agent-win-x64.exe",
+    "build:macos": "bun build --compile --target=bun-macos-arm64 ./src/index.ts --outfile target/clones-quality-agent-macos-arm64",
+    "build:linux": "bun build --compile --target=bun-linux-x64 ./src/index.ts --outfile target/clones-quality-agent-linux-x64",
     "build": "bun build:windows && bun build:macos && bun build:linux"
   },
   "author": "",

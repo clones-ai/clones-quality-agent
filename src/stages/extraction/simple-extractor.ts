@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { PipelineStage, ProcessedEvent } from "../../shared/types";
 import { join } from "path";
 
-type KeyId = 
+type KeyId =
   // Windows Format
   | 'Escape' | 'Return' | 'Backspace' | 'Left' | 'Right' | 'Up' | 'Down' | 'Space'
   | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M'
@@ -39,7 +39,7 @@ interface InputEvent {
   time: number;
 }
 
-export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent[]> {
+export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEvent[]> {
   private symbolMap: { [key in KeyId]?: string } = {
     // Regular symbols
     'Space': ' ',
@@ -140,7 +140,7 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
     'SemiColon': ':'
   };
 
-  constructor(private dataDir: string) {}
+  constructor(private dataDir: string) { }
 
   private isSpecialKey(key: KeyId): boolean {
     const specialKeys = new Set<KeyId>([
@@ -254,12 +254,12 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
 
     for (const event of events) {
       const time = event.time - epoch;
-      
+
       // Check if we need to flush text based on time since last key
       if (currentText && lastKeyTime !== null && time - lastKeyTime > 1000) {
         flushText();
       }
-      
+
       switch (event.event) {
         case 'mousemove': {
           if (event.data.x !== undefined && event.data.y !== undefined) {
@@ -337,13 +337,13 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
               let modifiers = Array.from(activeModifiers);
               const finalKey = event.data.key.toString().toLowerCase();
               const hotkeyStr = [...modifiers, finalKey].join('-');
-              
+
               processedEvents.push({
                 type: 'hotkey',
                 timestamp: time,
                 data: { text: hotkeyStr }
               });
-              
+
               // Clear modifiers after using them
               activeModifiers.clear();
               sequenceModifiers.clear();
@@ -357,10 +357,10 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
             } else {
               // Handle regular typing, including Shift+letter for capitals
               const hasShift = activeModifiers.has('Shift');
-              const mappedKey = hasShift 
+              const mappedKey = hasShift
                 ? this.shiftSymbolMap[event.data.key] || this.symbolMap[event.data.key]
                 : this.symbolMap[event.data.key];
-                
+
               if (mappedKey) {
                 // Symbol or shifted symbol - output the mapped character
                 const charToAdd = mappedKey;
@@ -374,10 +374,10 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
                 const key = event.data.key.toString();
                 const isWindowsLetter = /^[A-Z]$/.test(key);
                 const isMacLetter = /^Key[A-Z]$/.test(key);
-                const hasShift = activeModifiers.has('Shift') || 
-                                activeModifiers.has('ShiftLeft') || 
-                                activeModifiers.has('ShiftRight');
-                
+                const hasShift = activeModifiers.has('Shift') ||
+                  activeModifiers.has('ShiftLeft') ||
+                  activeModifiers.has('ShiftRight');
+
                 let charToAdd;
                 if (isWindowsLetter) {
                   // Windows format: 'A' -> 'a' or 'A'
@@ -389,7 +389,7 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
                 } else {
                   charToAdd = key.toLowerCase();
                 }
-                
+
                 if (!textStartTime) {
                   textStartTime = time;
                 }
@@ -404,10 +404,10 @@ export class GymDesktopExtractor implements PipelineStage<string, ProcessedEvent
         case 'keyup': {
           if (event.data.key && this.isSpecialKey(event.data.key)) {
             activeModifiers.delete(event.data.key);
-            
+
             // If all modifiers are released and we have a sequence to emit
             if (activeModifiers.size === 0) {
-              if(sequenceModifiers.size > 0 && currentText === '') {
+              if (sequenceModifiers.size > 0 && currentText === '') {
                 const modifierStr = Array.from(sequenceModifiers).join('-');
                 processedEvents.push({
                   type: 'hotkey',

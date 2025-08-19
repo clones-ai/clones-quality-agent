@@ -1,4 +1,4 @@
-# Clones Data Pipeline
+# Clones Quality Agent (CQA)
 
 Process recordings from the Clones factory demos and (optionally) grade task completion with a modern, reliable LLM-based evaluator.
 
@@ -31,13 +31,13 @@ Process recordings from the Clones factory demos and (optionally) grade task com
 
 The pipeline accepts one of the following session layouts.
 
-1. **Gym Desktop recordings**
+1. **Demonstration Desktop recordings**
 
 * `session_id.mp4` – session video
 * `session_id.events.jsonl` – event stream in JSONL
 * `session_id.meta.json` – optional metadata
 
-2. **Gym Web recordings**
+2. **Demonstration Web recordings**
 
 * `session_id.events.json` – event data
 * `session_id.guac` – Guacamole recording
