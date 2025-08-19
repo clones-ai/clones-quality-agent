@@ -8,3 +8,6 @@ data/tests/finetune/finetune
 data/tests/extraction/temp
 data/debug
 eng.traineddata
+data/tests/grader/metrics.json
+data/tests/grader/20250817_232256/metrics.json
+data/tests/grader/20250817_232256/scores.json
