@@ -115,11 +115,15 @@ export class Grader {
     this.maxTextPerMessage = normalizedText;
     this.seed = normalizedSeed;
 
+    console.log('DEFAULT_CRITERIA', DEFAULT_CRITERIA);
+
     this.criteria = {
       outcomeAchievement: { weight: DEFAULT_CRITERIA.outcomeAchievement.weight },
       processQuality: { weight: DEFAULT_CRITERIA.processQuality.weight },
       efficiency: { weight: DEFAULT_CRITERIA.efficiency.weight },
     };
+
+    console.log('CRITERIA', this.criteria);
   }
 
   /* ----- Public API ----- */
@@ -217,6 +221,7 @@ export class Grader {
     totalChunks: number
   ): Promise<string> {
     const systemPrompt = this.buildSystemPrompt(meta, prevSummary, false, chunkIndex, totalChunks);
+    console.log('SYSTEM_PROMPT', systemPrompt);
     const userContent = this.formatMessageContent(chunk);
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
