@@ -21,7 +21,7 @@ jobs:
 
       - name: Install Dependencies
         run: bun install
-      - name: Build Pipeline for All Operating Systems
+      - name: Build Clones Quality Agent for All Operating Systems
         run: bun run build
 
       - name: Fix Artifact Permissions

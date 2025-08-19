@@ -6,7 +6,7 @@ import { StructuredDataAugmenter } from './stages/augmentation/structured-data-a
 import { EventExtractor } from './stages/extraction/event-extractor';
 import { GuacExtractor } from './stages/extraction/guac-extractor';
 import { VideoExtractor } from './stages/extraction/video-extractor';
-import { GymDesktopExtractor } from './stages/extraction/simple-extractor';
+import { DemoDesktopExtractor } from './stages/extraction/simple-extractor';
 import { MessageFormatter } from './stages/formatting/message-formatter';
 import path from 'path';
 
@@ -15,7 +15,7 @@ import { GraderLogger, Chunk, MetaData } from './stages/grading/grader/types';
 
 import packageJson from '../package.json';
 
-console.log(`Pipeline version: ${packageJson.version}`);
+console.log(`Clones Quality Agent version: ${packageJson.version}`);
 
 // Optional: Create a custom logger for production use
 class ProductionLogger implements GraderLogger {
@@ -137,7 +137,7 @@ const pipeline = new Pipeline({
   extractors: [
     new VideoExtractor(dataDir, values.ffmpeg, values.ffprobe),
     ...(format === 'desktop'
-      ? [new GymDesktopExtractor(dataDir)]
+      ? [new DemoDesktopExtractor(dataDir)]
       : [new GuacExtractor(dataDir), new EventExtractor(dataDir)])
   ],
   augmenters:
