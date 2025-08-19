@@ -116,6 +116,7 @@ export class Grader {
     this.seed = normalizedSeed;
 
     this.criteria = { ...DEFAULT_CRITERIA };
+    console.log('CRITERIA_AT_START', DEFAULT_CRITERIA);
   }
 
   /* ----- Public API ----- */
@@ -595,13 +596,8 @@ export class Grader {
     processQuality: number,
     efficiency: number
   ): number {
+    console.log('CRITERIA_BEFORE_SCORE', this.criteria);
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
-    console.log('outcomeAchievement', outcomeAchievement);
-    console.log('processQuality', processQuality);
-    console.log('efficiency', efficiency);
-    console.log('o', o);
-    console.log('p', p);
-    console.log('e', e);
     const raw =
       outcomeAchievement * o.weight +
       processQuality * p.weight +
