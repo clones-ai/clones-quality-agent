@@ -125,14 +125,20 @@ export class Grader {
       console.log('Before assignment - this.criteria:', this.criteria);
 
       this.criteria = {} as EvaluationCriteria;
-      this.criteria.outcomeAchievement = { weight: 0.5 };
-      this.criteria.processQuality = { weight: 0.3 };
-      this.criteria.efficiency = { weight: 0.2 };
+      this.criteria.outcomeAchievement = { weight: 1 / 2 };
+      this.criteria.processQuality = { weight: 3 / 10 };
+      this.criteria.efficiency = { weight: 1 / 5 };
 
       console.log('After assignment - this.criteria:', this.criteria);
 
-      // Test de sanity check
-      const testObj = { outcomeAchievement: { weight: 0.5 } };
+      // Test de sanity check - différents formats de nombres
+      const testDecimal = 0.5;
+      const testFraction = 1 / 2;
+      const testParsed = parseFloat("0.5");
+      const testObj = { outcomeAchievement: { weight: testDecimal } };
+      console.log('Test decimal literal:', testDecimal);
+      console.log('Test fraction:', testFraction);
+      console.log('Test parsed:', testParsed);
       console.log('Test object:', testObj);
       console.log('Test weight:', testObj.outcomeAchievement.weight);
     } else {
