@@ -115,42 +115,11 @@ export class Grader {
     this.maxTextPerMessage = normalizedText;
     this.seed = normalizedSeed;
 
-    const weights = [
-      DEFAULT_CRITERIA.outcomeAchievement.weight,
-      DEFAULT_CRITERIA.processQuality.weight,
-      DEFAULT_CRITERIA.efficiency.weight,
-    ];
-    if (weights.some(w => !Number.isFinite(w) || w <= 0)) {
-      console.warn('Invalid DEFAULT_CRITERIA in bundle; falling back to 0.5/0.3/0.2');
-      console.log('Before assignment - this.criteria:', this.criteria);
-
-      this.criteria = {} as EvaluationCriteria;
-      this.criteria.outcomeAchievement = { weight: 0.5 };
-      this.criteria.processQuality = { weight: 0.3 };
-      this.criteria.efficiency = { weight: 0.2 };
-
-      console.log('After assignment - this.criteria:', this.criteria);
-
-      const testDecimal = 0.5;
-      const testFraction = 1 / 2;
-      const testParsed = parseFloat("0.5");
-      const testObj = { outcomeAchievement: { weight: testDecimal } };
-      console.log('Test decimal literal:', testDecimal);
-      console.log('Test fraction:', testFraction);
-      console.log('Test parsed:', testParsed);
-      console.log('Test object:', testObj);
-      console.log('Test weight:', testObj.outcomeAchievement.weight);
-    } else {
-      this.criteria = {
-        outcomeAchievement: { weight: DEFAULT_CRITERIA.outcomeAchievement.weight },
-        processQuality: { weight: DEFAULT_CRITERIA.processQuality.weight },
-        efficiency: { weight: DEFAULT_CRITERIA.efficiency.weight },
-      };
-    }
-
-    console.log('RESOLVED_CONSTANTS_URL', import.meta.url);
-    console.log('CRITERIA_AT_START_CST', DEFAULT_CRITERIA);
-    console.log('CRITERIA_AT_START', this.criteria);
+    this.criteria = {
+      outcomeAchievement: { weight: DEFAULT_CRITERIA.outcomeAchievement.weight },
+      processQuality: { weight: DEFAULT_CRITERIA.processQuality.weight },
+      efficiency: { weight: DEFAULT_CRITERIA.efficiency.weight },
+    };
   }
 
   /* ----- Public API ----- */
@@ -189,14 +158,14 @@ export class Grader {
       next.efficiency.weight = w;
     }
 
-    // Normalize weights to ensure they sum to exactly 1.0
+    // Normalize weights to ensure they sum to exactly 100 (our scale)
     const rawSum =
       next.outcomeAchievement.weight + next.processQuality.weight + next.efficiency.weight;
 
-    // Normalize to sum to 1.0
-    next.outcomeAchievement.weight = next.outcomeAchievement.weight / rawSum;
-    next.processQuality.weight = next.processQuality.weight / rawSum;
-    next.efficiency.weight = next.efficiency.weight / rawSum;
+    // Normalize to sum to 100 (maintain integer precision)
+    next.outcomeAchievement.weight = Math.round((next.outcomeAchievement.weight / rawSum) * 100);
+    next.processQuality.weight = Math.round((next.processQuality.weight / rawSum) * 100);
+    next.efficiency.weight = Math.round((next.efficiency.weight / rawSum) * 100);
 
     this.criteria = next;
   }
@@ -231,7 +200,6 @@ export class Grader {
 
     for (let i = 0; i < chunks.length; i++) {
       const summary = await this.evaluateChunk(chunks[i], meta, prevSummary, i, chunks.length);
-      console.log('summary', summary);
       summaries.push(summary);
       prevSummary = summary;
     }
@@ -630,13 +598,9 @@ export class Grader {
     processQuality: number,
     efficiency: number
   ): number {
-    console.log('CRITERIA_BEFORE_SCORE', this.criteria);
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
-    const raw =
-      outcomeAchievement * o.weight +
-      processQuality * p.weight +
-      efficiency * e.weight;
-    console.log('raw', raw);
+    const raw = (outcomeAchievement * o.weight + processQuality * p.weight + efficiency * e.weight) / 100;
+
     // Single rounding at the end for maximum precision
     return Math.round(clamp(raw, 0, 100));
   }
@@ -657,9 +621,9 @@ export class Grader {
 
     const weights =
       `Scoring weights (must be reflected in component scores): ` +
-      `Outcome=${this.criteria.outcomeAchievement.weight}, ` +
-      `Process=${this.criteria.processQuality.weight}, ` +
-      `Efficiency=${this.criteria.efficiency.weight}.`;
+      `Outcome=${this.criteria.outcomeAchievement.weight / 100}, ` +
+      `Process=${this.criteria.processQuality.weight / 100}, ` +
+      `Efficiency=${this.criteria.efficiency.weight / 100}.`;
 
     const metaLine =
       `Session=${meta.sessionId} | Platform=${meta.platform ?? "n/a"} | ` +
