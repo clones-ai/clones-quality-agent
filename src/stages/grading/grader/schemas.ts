@@ -31,7 +31,7 @@ export const FINAL_EVALUATION_SCHEMA = {
                     "Short, final justification of the scores. No chain-of-thought.",
             },
             score: { type: "integer", minimum: 0, maximum: 100 },
-            confidence: { type: "number", minimum: 0, maximum: 1 },
+            confidence: { type: "integer", minimum: 0, maximum: 100 },
             outcomeAchievement: { type: "integer", minimum: 0, maximum: 100 },
             processQuality: { type: "integer", minimum: 0, maximum: 100 },
             efficiency: { type: "integer", minimum: 0, maximum: 100 },
@@ -71,7 +71,7 @@ export const FinalEvaluationSchema = z.object({
         }, "Observations must contain between 2 and 6 non-empty lines or bullet points"),
     reasoning: z.string().min(1, "Reasoning must not be empty"),
     score: z.number().int().min(0).max(100),
-    confidence: z.number().min(0).max(1),
+    confidence: z.number().int().min(0).max(100),
     outcomeAchievement: z.number().int().min(0).max(100),
     processQuality: z.number().int().min(0).max(100),
     efficiency: z.number().int().min(0).max(100)

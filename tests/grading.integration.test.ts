@@ -138,7 +138,7 @@ describe("Grader Pipeline (spawn)", () => {
             expect(gradeResult.efficiency).toBeGreaterThanOrEqual(0);
             expect(gradeResult.efficiency).toBeLessThanOrEqual(100);
             expect(gradeResult.confidence).toBeGreaterThanOrEqual(0);
-            expect(gradeResult.confidence).toBeLessThanOrEqual(1);
+            expect(gradeResult.confidence).toBeLessThanOrEqual(100);
 
             // Check metrics.json
             const metricsContent = await fs.readFile(metricsPath, "utf8");
@@ -190,7 +190,7 @@ describe("Grader Integration (real API)", () => {
             expect(result.efficiency).toBeGreaterThanOrEqual(0);
             expect(result.efficiency).toBeLessThanOrEqual(100);
             expect(result.confidence).toBeGreaterThanOrEqual(0);
-            expect(result.confidence).toBeLessThanOrEqual(1);
+            expect(result.confidence).toBeLessThanOrEqual(100);
 
             // Should finish within the timeout budget (plus small overhead)
             expect(elapsed).toBeLessThan(35_000);

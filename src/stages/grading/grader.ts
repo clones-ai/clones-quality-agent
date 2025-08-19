@@ -115,15 +115,11 @@ export class Grader {
     this.maxTextPerMessage = normalizedText;
     this.seed = normalizedSeed;
 
-    console.log('DEFAULT_CRITERIA', DEFAULT_CRITERIA);
-
     this.criteria = {
       outcomeAchievement: { weight: DEFAULT_CRITERIA.outcomeAchievement.weight },
       processQuality: { weight: DEFAULT_CRITERIA.processQuality.weight },
       efficiency: { weight: DEFAULT_CRITERIA.efficiency.weight },
     };
-
-    console.log('CRITERIA', this.criteria);
   }
 
   /* ----- Public API ----- */
@@ -221,7 +217,6 @@ export class Grader {
     totalChunks: number
   ): Promise<string> {
     const systemPrompt = this.buildSystemPrompt(meta, prevSummary, false, chunkIndex, totalChunks);
-    console.log('SYSTEM_PROMPT', systemPrompt);
     const userContent = this.formatMessageContent(chunk);
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -285,7 +280,7 @@ export class Grader {
     const outcome = clamp(validated.outcomeAchievement, 0, 100);
     const process = clamp(validated.processQuality, 0, 100);
     const eff = clamp(validated.efficiency, 0, 100);
-    const confidence = clamp(validated.confidence, 0, 1);
+    const confidence = clamp(validated.confidence, 0, 100);
 
     // Deterministic final score based on current criteria (overrides model score)
     const score = this.computeDeterministicScore(outcome, process, eff);
@@ -603,10 +598,9 @@ export class Grader {
     processQuality: number,
     efficiency: number
   ): number {
-    console.log('CRITERIA_IN_COMPUTE', this.criteria);
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
     const raw = (outcomeAchievement * o.weight + processQuality * p.weight + efficiency * e.weight) / 100;
-    console.log('RAW', raw);
+
     // Single rounding at the end for maximum precision
     return Math.round(clamp(raw, 0, 100));
   }
@@ -652,7 +646,7 @@ export class Grader {
 
     const guidelines =
       isFinal
-        ? `Output must include: summary, observations (2–6 bullet points or lines, e.g., "• Point 1\n• Point 2"), reasoning (short), confidence [0..1], and component scores in [0..100].`
+        ? `Output must include: summary, observations (2–6 bullet points or lines, e.g., "• Point 1\n• Point 2"), reasoning (short), confidence [0..100], and component scores in [0..100].`
         : `Output must include: summary (one short paragraph).`;
 
     return [

@@ -54,7 +54,7 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
                     "• Navigated to target app\n• Completed primary objectives\n• Recovered from minor errors",
                 reasoning: "High outcome, good process, decent efficiency.",
                 score: 12, // ignored (deterministic score used)
-                confidence: 0.9,
+                confidence: 90,
                 outcomeAchievement: 80,
                 processQuality: 70,
                 efficiency: 60,
@@ -99,7 +99,7 @@ describe("Grader - happy path with structured outputs & deterministic score", ()
         expect(res.outcomeAchievement).toBe(80);
         expect(res.processQuality).toBe(70);
         expect(res.efficiency).toBe(60);
-        expect(res.confidence).toBeCloseTo(0.9);
+        expect(res.confidence).toBeCloseTo(90);
         expect(res.summary.length).toBeGreaterThan(0);
         expect(res.observations.length).toBeGreaterThan(0);
         expect(res.reasoning.length).toBeGreaterThan(0);
@@ -201,7 +201,7 @@ describe("Grader - JSON parsing fallbacks", () => {
                                 observations: "• Bullet 1\n• Bullet 2",
                                 reasoning: "Short rationale.",
                                 score: 1,
-                                confidence: 0.5,
+                                confidence: 50,
                                 outcomeAchievement: 10,
                                 processQuality: 10,
                                 efficiency: 10,
@@ -244,7 +244,7 @@ describe("Grader - JSON parsing fallbacks", () => {
                             '"observations":"• A\\n• B",' +
                             '"reasoning":"R",' +
                             '"score":99,' +
-                            '"confidence":0.7,' +
+                            '"confidence":70,' +
                             '"outcomeAchievement":50,' +
                             '"processQuality":60,' +
                             '"efficiency":70' +
@@ -292,7 +292,7 @@ describe("Grader - retries with exponential backoff", () => {
                                         observations: "• Good\n• Stable",
                                         reasoning: "Recovered.",
                                         score: 0,
-                                        confidence: 0.8,
+                                        confidence: 80,
                                         outcomeAchievement: 40,
                                         processQuality: 40,
                                         efficiency: 40,
@@ -343,7 +343,7 @@ describe("Grader - criteria updates affect deterministic score", () => {
                                         observations: "• X\n• Y",
                                         reasoning: "Y",
                                         score: 0,
-                                        confidence: 1,
+                                        confidence: 100,
                                         outcomeAchievement: 50,
                                         processQuality: 50,
                                         efficiency: 50,
@@ -554,7 +554,7 @@ describe("Grader - typed error handling", () => {
                                         observations: "• Retry worked\n• Connection stable",
                                         reasoning: "Good",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 80,
                                         efficiency: 80,
@@ -666,7 +666,7 @@ describe("Grader - schema validation", () => {
                                         observations: "• Line 1\n• Line 2\n• Line 3",
                                         reasoning: "Valid reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -710,7 +710,7 @@ describe("Grader - schema validation", () => {
                                         observations: "Only one line", // Invalid: need 2-6 lines
                                         reasoning: "Reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -750,7 +750,7 @@ describe("Grader - schema validation", () => {
                                         observations: "• Line 1\n• Line 2\n• Line 3\n• Line 4\n• Line 5\n• Line 6\n• Line 7", // Invalid: too many lines
                                         reasoning: "Reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -789,7 +789,7 @@ describe("Grader - schema validation", () => {
                                         summary: "Summary",
                                         // Missing observations, reasoning, etc.
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -815,7 +815,7 @@ describe("Grader - schema validation", () => {
             observations: "• Line 1\n• Line 2",
             reasoning: "Parsed reasoning",
             score: 85,
-            confidence: 0.95,
+            confidence: 95,
             outcomeAchievement: 85,
             processQuality: 80,
             efficiency: 75,
@@ -876,7 +876,7 @@ describe("Grader - schema validation", () => {
                                         observations: "• Line 1\n• Line 2",
                                         reasoning: "Fallback reasoning",
                                         score: 75,
-                                        confidence: 0.85,
+                                        confidence: 85,
                                         outcomeAchievement: 75,
                                         processQuality: 75,
                                         efficiency: 75,
@@ -926,7 +926,7 @@ describe("Grader - security and sanitization", () => {
                                         observations: "• Clean line 1\n• Clean line 2",
                                         reasoning: "Clean reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -990,7 +990,7 @@ describe("Grader - security and sanitization", () => {
                                         observations: "• Clean line 1\n• Clean line 2",
                                         reasoning: "Clean reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 75,
                                         efficiency: 70,
@@ -1305,7 +1305,7 @@ describe("Grader - concurrency and rate limiting", () => {
                                         observations: "• Task completed\n• No issues found",
                                         reasoning: "Good execution",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 80,
                                         efficiency: 80,
@@ -1422,7 +1422,7 @@ describe("Grader - concurrency and rate limiting", () => {
                                         observations: "• All chunks processed\n• Sequential order maintained",
                                         reasoning: "Good",
                                         score: 85,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 85,
                                         processQuality: 85,
                                         efficiency: 85,
@@ -1497,7 +1497,7 @@ describe("Grader - observability and metrics", () => {
                                         observations: "• Task completed\n• Good performance",
                                         reasoning: "Successful execution",
                                         score: 85,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 85,
                                         processQuality: 85,
                                         efficiency: 85,
@@ -1587,7 +1587,7 @@ describe("Grader - observability and metrics", () => {
                                         observations: "• Retry worked\n• Connection stable",
                                         reasoning: "Good recovery",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 80,
                                         efficiency: 80,
@@ -1693,7 +1693,7 @@ describe("Grader - observability and metrics", () => {
                                         observations: "• Test line 1\n• Test line 2",
                                         reasoning: "Test reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 80,
                                         efficiency: 80,
@@ -1742,7 +1742,7 @@ describe("Grader - observability and metrics", () => {
                                         observations: "• Test line 1\n• Test line 2",
                                         reasoning: "Test reasoning",
                                         score: 80,
-                                        confidence: 0.9,
+                                        confidence: 90,
                                         outcomeAchievement: 80,
                                         processQuality: 80,
                                         efficiency: 80,
