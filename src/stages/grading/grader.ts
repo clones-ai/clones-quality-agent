@@ -124,10 +124,11 @@ export class Grader {
       console.warn('Invalid DEFAULT_CRITERIA in bundle; falling back to 0.5/0.3/0.2');
       console.log('Before assignment - this.criteria:', this.criteria);
 
-      this.criteria = {} as EvaluationCriteria;
-      this.criteria.outcomeAchievement = { weight: 1 / 2 };
-      this.criteria.processQuality = { weight: 3 / 10 };
-      this.criteria.efficiency = { weight: 1 / 5 };
+      this.criteria = {
+        outcomeAchievement: { weight: 5 }, // 5/10 = 0.5
+        processQuality: { weight: 3 },     // 3/10 = 0.3  
+        efficiency: { weight: 2 },         // 2/10 = 0.2
+      };
 
       console.log('After assignment - this.criteria:', this.criteria);
 
@@ -633,10 +634,7 @@ export class Grader {
   ): number {
     console.log('CRITERIA_BEFORE_SCORE', this.criteria);
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
-    const raw =
-      outcomeAchievement * o.weight +
-      processQuality * p.weight +
-      efficiency * e.weight;
+    const raw = (outcomeAchievement * o.weight + processQuality * p.weight + efficiency * e.weight) / 10;
     console.log('raw', raw);
     // Single rounding at the end for maximum precision
     return Math.round(clamp(raw, 0, 100));
