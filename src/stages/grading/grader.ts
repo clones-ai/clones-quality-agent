@@ -226,12 +226,9 @@ export class Grader {
       /* isFinal */ false,
       { sessionId: meta.sessionId, chunkIndex, totalChunks }
     );
-    console.log(responseText);
 
     const parsed = this.parseJsonResponse(responseText);
-    console.log(parsed);
     const validated = this.validateChunkResponse(parsed);
-    console.log(validated);
 
     if (!validated) {
       this.logger.warn(
@@ -253,7 +250,6 @@ export class Grader {
       summaries.length - 1,
       summaries.length
     );
-    console.log(systemPrompt);
 
     const finalUserText =
       `You are given the list of chunk summaries for the full session.\n` +
@@ -270,13 +266,9 @@ export class Grader {
       /* isFinal */ true,
       { sessionId: meta.sessionId }
     );
-    console.log(responseText);
 
     const parsed = this.parseJsonResponse(responseText);
-    console.log(parsed);
     const validated = this.validateFinalResponse(parsed);
-    console.log(validated);
-
     if (!validated) {
       throw new PermanentError("Final evaluation validation failed: response does not match expected schema");
     }
@@ -317,7 +309,6 @@ export class Grader {
     while (attempt < this.maxRetries) {
       try {
         const response = await this.createChatCompletionWithTimeout(messages, isFinal);
-        console.log('callModelWithRetries: ', response);
         const text = this.extractMessageText(response);
         if (!text || !text.trim()) {
           throw new Error("Empty response from model.");
@@ -590,7 +581,6 @@ export class Grader {
 
   private validateFinalResponse(data: unknown): FinalEvaluation | null {
     try {
-      console.log('validateFinalResponse', data);
       return FinalEvaluationSchema.parse(data);
     } catch (e) {
       this.logger.error("Final response validation failed.", e as Error, {
@@ -606,10 +596,17 @@ export class Grader {
     efficiency: number
   ): number {
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
+    console.log('outcomeAchievement', outcomeAchievement);
+    console.log('processQuality', processQuality);
+    console.log('efficiency', efficiency);
+    console.log('o', o);
+    console.log('p', p);
+    console.log('e', e);
     const raw =
       outcomeAchievement * o.weight +
       processQuality * p.weight +
       efficiency * e.weight;
+    console.log('raw', raw);
     // Single rounding at the end for maximum precision
     return Math.round(clamp(raw, 0, 100));
   }
