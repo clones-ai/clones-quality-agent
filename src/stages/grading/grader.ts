@@ -115,10 +115,27 @@ export class Grader {
     this.maxTextPerMessage = normalizedText;
     this.seed = normalizedSeed;
 
-    this.criteria = { ...DEFAULT_CRITERIA };
+    const weights = [
+      DEFAULT_CRITERIA.outcomeAchievement.weight,
+      DEFAULT_CRITERIA.processQuality.weight,
+      DEFAULT_CRITERIA.efficiency.weight,
+    ];
+    if (weights.some(w => !Number.isFinite(w) || w <= 0)) {
+      console.warn('Invalid DEFAULT_CRITERIA in bundle; falling back to 0.5/0.3/0.2');
+      this.criteria = {
+        outcomeAchievement: { weight: 0.5 },
+        processQuality: { weight: 0.3 },
+        efficiency: { weight: 0.2 },
+      };
+    } else {
+      this.criteria = { ...DEFAULT_CRITERIA };
+    }
+
+
     console.log('RESOLVED_CONSTANTS_URL', import.meta.url);
 
-    console.log('CRITERIA_AT_START', DEFAULT_CRITERIA);
+    console.log('CRITERIA_AT_START_CST', DEFAULT_CRITERIA);
+    console.log('CRITERIA_AT_START', this.criteria);
   }
 
   /* ----- Public API ----- */
