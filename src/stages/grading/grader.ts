@@ -603,9 +603,10 @@ export class Grader {
     processQuality: number,
     efficiency: number
   ): number {
+    console.log('CRITERIA_IN_COMPUTE', this.criteria);
     const { outcomeAchievement: o, processQuality: p, efficiency: e } = this.criteria;
     const raw = (outcomeAchievement * o.weight + processQuality * p.weight + efficiency * e.weight) / 100;
-
+    console.log('RAW', raw);
     // Single rounding at the end for maximum precision
     return Math.round(clamp(raw, 0, 100));
   }
@@ -617,6 +618,7 @@ export class Grader {
     chunkIndex: number,
     totalChunks: number
   ): string {
+
     const header =
       `You are an evaluation system for computer-use trajectories. ` +
       `Assess outcomes, process quality, and efficiency based on the provided context. ` +
@@ -626,9 +628,9 @@ export class Grader {
 
     const weights =
       `Scoring weights (must be reflected in component scores): ` +
-      `Outcome=${this.criteria.outcomeAchievement.weight / 100}, ` +
-      `Process=${this.criteria.processQuality.weight / 100}, ` +
-      `Efficiency=${this.criteria.efficiency.weight / 100}.`;
+      `Outcome=${this.criteria.outcomeAchievement.weight}, ` +
+      `Process=${this.criteria.processQuality.weight}, ` +
+      `Efficiency=${this.criteria.efficiency.weight}.`;
 
     const metaLine =
       `Session=${meta.sessionId} | Platform=${meta.platform ?? "n/a"} | ` +
