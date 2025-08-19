@@ -122,7 +122,7 @@ For each session, `scores.json`:
   "observations": "• High-level bullets (2–6 points)\n• No chain-of-thought",
   "reasoning": "Short final rationale.",
   "score": 73,
-  "confidence": 0.90,
+  "confidence": 90,
   "outcomeAchievement": 80,
   "processQuality": 70,
   "efficiency": 60

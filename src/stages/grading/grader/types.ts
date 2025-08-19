@@ -7,7 +7,7 @@ export interface GradeResult {
     score: number;
     /** Short, final rationale (no step-by-step reasoning). */
     reasoning: string;
-    /** Model-reported confidence in [0.0, 1.0]. */
+    /** Model-reported confidence in [0, 100]. */
     confidence: number;
     /** Component scores (0–100). */
     outcomeAchievement: number;

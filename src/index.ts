@@ -177,7 +177,7 @@ async function gradeSftFile(
   const result = await grader.evaluateSession(chunks, meta);
   if (result) {
     console.log('\nGrading complete!');
-    console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+    console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence).toFixed(1)}%)`);
     console.log('\nScore Breakdown:');
     console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
     console.log(`- Process Quality: ${result.processQuality}/100`);
