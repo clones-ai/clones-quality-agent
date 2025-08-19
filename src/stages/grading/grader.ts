@@ -116,6 +116,9 @@ export class Grader {
     this.seed = normalizedSeed;
 
     this.criteria = { ...DEFAULT_CRITERIA };
+    console.log('RESOLVED_CONSTANTS_PATH', require.resolve('./grader/constants'));
+    console.log('RESOLVED_CONSTANTS_URL', import.meta.url);
+
     console.log('CRITERIA_AT_START', DEFAULT_CRITERIA);
   }
 
