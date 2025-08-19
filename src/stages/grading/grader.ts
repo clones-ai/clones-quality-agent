@@ -122,18 +122,28 @@ export class Grader {
     ];
     if (weights.some(w => !Number.isFinite(w) || w <= 0)) {
       console.warn('Invalid DEFAULT_CRITERIA in bundle; falling back to 0.5/0.3/0.2');
-      this.criteria = {
-        outcomeAchievement: { weight: 0.5 },
-        processQuality: { weight: 0.3 },
-        efficiency: { weight: 0.2 },
-      };
+      console.log('Before assignment - this.criteria:', this.criteria);
+
+      this.criteria = {} as EvaluationCriteria;
+      this.criteria.outcomeAchievement = { weight: 0.5 };
+      this.criteria.processQuality = { weight: 0.3 };
+      this.criteria.efficiency = { weight: 0.2 };
+
+      console.log('After assignment - this.criteria:', this.criteria);
+
+      // Test de sanity check
+      const testObj = { outcomeAchievement: { weight: 0.5 } };
+      console.log('Test object:', testObj);
+      console.log('Test weight:', testObj.outcomeAchievement.weight);
     } else {
-      this.criteria = { ...DEFAULT_CRITERIA };
+      this.criteria = {
+        outcomeAchievement: { weight: DEFAULT_CRITERIA.outcomeAchievement.weight },
+        processQuality: { weight: DEFAULT_CRITERIA.processQuality.weight },
+        efficiency: { weight: DEFAULT_CRITERIA.efficiency.weight },
+      };
     }
 
-
     console.log('RESOLVED_CONSTANTS_URL', import.meta.url);
-
     console.log('CRITERIA_AT_START_CST', DEFAULT_CRITERIA);
     console.log('CRITERIA_AT_START', this.criteria);
   }
