@@ -29,7 +29,7 @@ import {
   ProgrammaticGrader,
   RequestMetrics,
 } from "./grader/types";
-import { clamp, classifyError, safeExtractJson, sanitizeUserInput, sleep } from "./grader/utils";
+import { clamp, classifyError, sanitizeUserInput, sleep } from "./grader/utils";
 import packageJson from "../../../package.json";
 
 
@@ -260,7 +260,7 @@ export class Grader {
     const response = await this.callModelWithRetries(
       messages,
       ChunkEvaluationSchema,
-      { sessionId: meta.sessionId, chunkIndex, totalChunks },
+      { sessionId: meta.sessionId, chunkIndex, totalChunks, isFinal: false },
       this.model
     );
 
@@ -325,7 +325,7 @@ export class Grader {
   private async callModelWithRetries<T>(
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     schema: z.ZodSchema<T>,
-    meta: Record<string, unknown>,
+    meta: Record<string, unknown> & { isFinal: boolean },
     model: string
   ): Promise<T> {
     let attempt = 0;
@@ -335,7 +335,7 @@ export class Grader {
 
     while (attempt < this.maxRetries) {
       try {
-        const result = await this.createChatCompletionWithTimeout(messages, schema, model);
+        const result = await this.createChatCompletionWithTimeout(messages, schema, model, meta.isFinal);
 
         // Emit success metrics
         const endTime = Date.now();
@@ -494,7 +494,8 @@ export class Grader {
   private async createChatCompletionWithTimeout<T>(
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     schema: z.ZodSchema<T>,
-    model: string
+    model: string,
+    isFinal: boolean
   ) {
     // Acquire rate limiter token before making request
     await this.rateLimiter.acquire();
@@ -512,7 +513,7 @@ export class Grader {
         seed: this.seed,
         messages,
         // Constrain output tokens to control cost.
-        max_tokens: (schema as any)._def?.shape?.observations ? 900 : 300,
+        max_tokens: isFinal ? 900 : 300,
         tool_choice: { type: "function", function: { name: "submit_evaluation" } },
         tools: [
           {
@@ -520,19 +521,15 @@ export class Grader {
             function: {
               name: "submit_evaluation",
               description: "Submit the evaluation results.",
-              parameters: (schema as any)._def?.shape?.observations ? FINAL_EVALUATION_SCHEMA : CHUNK_EVALUATION_SCHEMA,
+              parameters: isFinal ? FINAL_EVALUATION_SCHEMA : CHUNK_EVALUATION_SCHEMA,
             },
           },
         ],
       });
 
-      const text = this.extractMessageText(response);
-      if (!text || !text.trim()) {
-        throw new Error("Empty response from model.");
-      }
-
-      const json = this.parseJsonResponse(text);
-      const data = schema.parse(json);
+      const argumentsJson = this.extractFunctionCallArguments(response);
+      const parsedArguments = this.parseFunctionCallArguments(argumentsJson);
+      const data = schema.parse(parsedArguments);
 
       return {
         data,
@@ -546,61 +543,34 @@ export class Grader {
     }
   }
 
-  private extractMessageText(
+  private extractFunctionCallArguments(
     resp: OpenAI.Chat.Completions.ChatCompletion
   ): string {
     const choice = resp.choices?.[0];
     const msg = choice?.message;
-    if (!msg) return "";
-
-    // First, try to use tool_calls if available
-    if (msg.tool_calls) {
-      const toolCall = msg.tool_calls[0];
-      if (toolCall && toolCall.type === "function" && toolCall.function && toolCall.function.arguments) {
-        return toolCall.function.arguments;
-      }
+    
+    if (!msg?.tool_calls?.[0]) {
+      throw new Error("No tool calls found in response.");
     }
 
-    // Fallback to raw content extraction
-    const c: any = msg.content as any;
-
-    if (typeof c === "string") return c;
-
-    if (Array.isArray(c)) {
-      // Join textual parts when present (robust to SDK variations).
-      const parts = c
-        .map((p) => {
-          if (!p) return "";
-          if (typeof p === "string") return p;
-          if (typeof p?.text === "string") return p.text;
-          if (typeof p?.output_text === "string") return p.output_text;
-          if (typeof p?.output_json === "string") return p.output_json;
-          return "";
-        })
-        .filter(Boolean);
-      return parts.join("\n");
+    const toolCall = msg.tool_calls[0];
+    if (toolCall.type !== "function" || !toolCall.function?.arguments) {
+      throw new Error("Invalid tool call structure.");
     }
 
-    // Fallback: stringify unknown structure to avoid silent failures.
-    try {
-      return JSON.stringify(c);
-    } catch {
-      return "";
-    }
+    return toolCall.function.arguments;
   }
 
   /* ----- Parsing / Scoring / Prompt / Content ----- */
 
-  private parseJsonResponse(text: string): any {
-    // Prefer strict JSON Schema responses, but still guard for any SDK/model edge cases.
-    const candidate = safeExtractJson(text) ?? text.trim();
+  private parseFunctionCallArguments(jsonString: string): any {
     try {
-      return JSON.parse(candidate);
+      return JSON.parse(jsonString);
     } catch (e) {
-      this.logger.error("Failed to parse JSON response from model.", e as Error, {
-        candidateLength: candidate.length
+      this.logger.error("Failed to parse function call arguments.", e as Error, {
+        argumentsLength: jsonString.length
       });
-      return null;
+      throw new Error("Invalid JSON in function call arguments.");
     }
   }
 
