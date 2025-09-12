@@ -11,3 +11,5 @@ eng.traineddata
 data/tests/grader/metrics.json
 data/tests/grader/20250817_232256/metrics.json
 data/tests/grader/20250817_232256/scores.json
+scripts/run-grading-data
+CLAUDE.md

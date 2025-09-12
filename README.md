@@ -74,6 +74,8 @@ bun run src/index.ts -f desktop -i .
 * `--ffprobe`           Path to `ffprobe` (default: `ffprobe`)
 * `--grade`             Enable grading mode (requires `OPENAI_API_KEY`)
 * `--chunk-size`        Messages per chunk when grading (default: 4)
+* `--model`             Model for chunk evaluation (e.g., `gpt-4o-mini`)
+* `--evaluation-model`  Model for final evaluation (falls back to `--model`)
 
 ---
 
@@ -118,6 +120,7 @@ For each session, `scores.json`:
 
 ```json
 {
+  "version": "2.0.0",
   "summary": "One-paragraph outcome summary.",
   "observations": "• High-level bullets (2–6 points)\n• No chain-of-thought",
   "reasoning": "Short final rationale.",
@@ -125,9 +128,140 @@ For each session, `scores.json`:
   "confidence": 90,
   "outcomeAchievement": 80,
   "processQuality": 70,
-  "efficiency": 60
+  "efficiency": 60,
+  "confidenceReasoning": "Justification for the confidence score.",
+  "outcomeAchievementReasoning": "Justification for the outcome achievement score.",
+  "processQualityReasoning": "Justification for the process quality score.",
+  "efficiencyReasoning": "Justification for the efficiency score."
 }
 ```
+
+### Advanced: Dual-Model Evaluation
+
+For higher-quality, unbiased evaluations, you can use separate models for chunk summarization and final scoring. OpenAI's research suggests this improves results by preventing the model from grading its own work.
+
+-   `model`: Used for intermediate chunk processing. A faster, cheaper model is often suitable (e.g., `gpt-4o-mini`).
+-   `evaluationModel`: Used for the final, holistic evaluation. A more powerful model is recommended (e.g., `gpt-4o-2024-08-06`).
+
+If `evaluationModel` is not provided, the primary `model` will be used for both steps.
+
+```ts
+const grader = new Grader({
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: "gpt-4o-mini",
+  evaluationModel: "gpt-4o-2024-08-06",
+});
+```
+
+### Advanced: Programmatic Graders
+
+While a Large Language Model (LLM) excels at qualitative, nuanced evaluation, it can be unreliable for simple, objective checks. **Programmatic Graders** solve this by running deterministic, rule-based functions alongside the LLM to verify facts that are easy to check with code.
+
+This provides the best of both worlds:
+-   **LLM Grader**: Evaluates the *quality* of the session (e.g., "Was the user's process logical?").
+-   **Programmatic Grader**: Verifies objective *facts* (e.g., "Was the 'Submit' button clicked?").
+
+#### How It Works
+
+1.  **Implement the `ProgrammaticGrader` Interface**
+
+    Create an object that implements the `ProgrammaticGrader` interface. Each function receives the session data (`chunks`) and returns a verifiable result (a number, a boolean, or a score object).
+
+    Below are practical examples for each method.
+
+    ```ts
+    import {
+      type ProgrammaticGrader,
+      type Chunk,
+      type EfficiencyScore,
+    } from "./src/stages/grading/grader";
+
+    const myGrader: ProgrammaticGrader = {
+      /**
+       * Calculates the total time elapsed from the first to the last event.
+       * Assumes events in chunks have a `timestamp` property.
+       */
+      evaluateCompletionTime(chunks: Chunk[]): number {
+        const events = chunks.flat();
+        if (events.length < 2) return 0;
+        const firstEvent = events[0] as any;
+        const lastEvent = events[events.length - 1] as any;
+        const startTime = firstEvent.timestamp ?? 0;
+        const endTime = lastEvent.timestamp ?? 0;
+        return Math.round((endTime - startTime) / 1000); // Return seconds
+      },
+
+      /**
+       * Checks if specific, required actions were performed.
+       * The `requirements` array is passed from the `meta` object.
+       */
+      checkRequiredActions(chunks: Chunk[], requirements: string[]): boolean {
+        const allText = chunks
+          .flat()
+          .map((item) => (item as any).text ?? "")
+          .join(" ");
+        return requirements.every((req) => allText.includes(req));
+      },
+
+      /**
+       * Calculates a simple efficiency score based on the number of clicks.
+       * Fewer clicks relative to an ideal path could indicate higher efficiency.
+       */
+      calculateEfficiencyMetrics(chunks: Chunk[]): EfficiencyScore {
+        const clickCount = chunks
+          .flat()
+          .filter((item) => (item as any).text?.includes("click")).length;
+        
+        // Example scoring: 100 is a perfect score. Lose 5 points per click.
+        const score = Math.max(0, 100 - clickCount * 5);
+        
+        return { score, reasoning: `${clickCount} click events recorded.` };
+      },
+    };
+    ```
+
+2.  **Pass it to the `Grader` Constructor**
+
+    ```ts
+    const grader = new Grader({
+      apiKey: process.env.OPENAI_API_KEY!,
+      programmaticGrader: myGrader,
+    });
+    ```
+
+3.  **Provide Requirements in `MetaData` (for `checkRequiredActions`)**
+
+    ```ts
+    const meta: MetaData = {
+      sessionId: "session_123",
+      requirements: ["save_settings", "click_logout_button"],
+    };
+    ```
+
+4.  **Results are Included in the Final Output**
+
+    The `scores.json` will now contain a `programmaticResults` field with the deterministic outputs.
+
+    ```json
+    {
+      "score": 73,
+      "...": "...",
+      "programmaticResults": {
+        "completionTime": 78,
+        "requiredActionsMet": true,
+        "efficiencyMetrics": {
+          "score": 85,
+          "reasoning": "3 click events recorded."
+        }
+      }
+    }
+    ```
+
+### Evaluation Criteria Explained
+
+* **Outcome Achievement**: How successfully did the user complete the task objectives? This focuses purely on the end result. A high score means the user met all requirements, regardless of the path taken.
+* **Process Quality**: How well did the user execute the task? This evaluates the method, penalizing errors, confusion, unnecessary steps, or deviations from the optimal path.
+* **Efficiency**: How quickly and directly did the user complete the task? This measures the economy of actions, time, and resources used. Fewer steps and less hesitation lead to a higher score.
 
 For each session, `metrics.json`:
 
@@ -157,6 +291,23 @@ For each session, `metrics.json`:
 
 Plus a global `metrics.json` with aggregate statistics across all sessions.
 
+### Standalone Grading Script
+
+For debugging and local testing, a standalone script is available to replicate how the backend invokes the grader. It runs the grading process on a specified session directory, streams the output in real-time, and prints the final `scores.json` and `metrics.json`.
+
+**Prerequisites:**
+- `OPENAI_API_KEY` must be set as an environment variable.
+- The session directory must contain the necessary files (e.g., `sft.json` or the raw video/event files).
+
+**Usage:**
+```bash
+# Basic usage
+bun run scripts/run-grading.ts /path/to/your/session_directory
+
+# Advanced usage with dual-model evaluation
+bun run scripts/run-grading.ts /path/to/your/session_directory --model gpt-4o-mini --evaluation-model gpt-4o-2024-08-06
+```
+
 ### CLI flow in grading mode
 
 * If `sft.json` exists, it is read, chunked, and graded.
@@ -171,15 +322,35 @@ import {
   Grader, 
   type Chunk, 
   type MetaData,
+  type ProgrammaticGrader,
+  type EfficiencyScore,
   TimeoutError,
   PermanentError, 
   TransientError
 } from "./src/stages/grading/grader";
 
+// 1. (Optional) Implement a programmatic grader for objective checks
+const myGrader: ProgrammaticGrader = {
+  evaluateCompletionTime: (chunks) => {
+    // Dummy implementation: calculate time from event timestamps in a real scenario
+    return 78;
+  },
+  checkRequiredActions: (chunks, reqs) => {
+    const allText = chunks.flat().map(item => (item as any).text ?? "").join(' ');
+    return reqs.every(req => allText.includes(req));
+  },
+  calculateEfficiencyMetrics: (chunks) => {
+    const clickCount = chunks.flat().filter(item => (item as any).text?.includes("click")).length;
+    return { score: 100 - clickCount * 5, reasoning: `${clickCount} clicks recorded.` };
+  },
+};
+
+// 2. Configure the main Grader
 const grader = new Grader({
   apiKey: process.env.OPENAI_API_KEY!,
   chunkSize: 4,
-  model: "gpt-4o",
+  model: "gpt-4o-mini",
+  evaluationModel: "gpt-4o-2024-08-06", // Recommended for final evaluation
   timeout: 60_000,
   maxRetries: 3,
   seed: 42,  // Fixed seed for deterministic output
@@ -193,13 +364,16 @@ const grader = new Grader({
     if (metrics.outcome !== 'success') {
       console.warn(`Request failed: ${metrics.error?.message}`);
     }
-  }
+  },
+  programmaticGrader: myGrader // Pass your programmatic grader here
 });
 
+// 3. Define session metadata, including any requirements for the programmatic grader
 const meta: MetaData = {
   sessionId: "session_123",
   platform: "web",
-  taskDescription: "User signs in and configures settings"
+  taskDescription: "User signs in and configures settings",
+  requirements: ["save_settings", "click_logout_button"] // For checkRequiredActions
 };
 
 // Convert your SFT-style messages to chunks the grader expects

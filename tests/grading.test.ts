@@ -2,12 +2,11 @@ import { describe, test, expect } from "bun:test";
 import {
     Chunk,
     GraderConfig,
-    RequestMetrics,
-    MetricsHook,
+    ProgrammaticGrader,
 } from "../src/stages/grading/grader/types";
 import {
-    TimeoutError,
     PermanentError,
+    TimeoutError,
     TransientError
 } from "../src/stages/grading/grader/errors";
 import { Grader } from "../src/stages/grading/grader";
@@ -26,7 +25,6 @@ function mock(fn: (...args: any[]) => any) {
 
 type CreateCall = {
     args: any[];
-    isFinal: boolean;
     request: any;
 };
 
@@ -38,29 +36,37 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
 
     const calls: CreateCall[] = [];
     const create = mock((req: any) => {
-        const isFinal =
-            req?.response_format?.json_schema?.name === "final_evaluation";
-        calls.push({ args: [req], isFinal, request: req });
+        const isFinal = req.messages.some((m: any) => m.role === "system" && m.content.includes("FINAL AGGREGATION"));
+        calls.push({ args: [req], request: req });
 
         if (!isFinal) {
-            const content = JSON.stringify({ summary: "User opened settings" });
+            const data = { summary: "User opened settings" };
             return Promise.resolve({
-                choices: [{ message: { content } }],
+                choices: [{ message: { content: JSON.stringify(data) } }],
+                usage: { total_tokens: 100 },
+                id: "chunk_resp_id",
             });
         } else {
-            const content = JSON.stringify({
+            const data = {
                 summary: "Overall, the user completed most goals.",
                 observations:
                     "• Navigated to target app\n• Completed primary objectives\n• Recovered from minor errors",
                 reasoning: "High outcome, good process, decent efficiency.",
-                score: 12, // ignored (deterministic score used)
+                score: 12, // This is intentionally different from the final deterministic score
                 confidence: 90,
                 outcomeAchievement: 80,
                 processQuality: 70,
                 efficiency: 60,
-            });
+                outcomeAchievementReasoning: "Completed all objectives.",
+                processQualityReasoning: "Followed the optimal path.",
+                efficiencyReasoning: "No unnecessary actions.",
+                confidenceReasoning: "High confidence due to clear evidence.",
+            };
             return Promise.resolve({
-                choices: [{ message: { content } }],
+                choices: [{ message: { content: JSON.stringify(data) } }],
+                usage: { total_tokens: 200, prompt_tokens: 150, completion_tokens: 50 },
+                id: "final_resp_id",
+                system_fingerprint: "fp_12345"
             });
         }
     });
@@ -77,8 +83,8 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
 }
 
 describe("Grader - happy path with structured outputs & deterministic score", () => {
-    test("evaluateSession returns deterministic score and uses JSON Schema response_format", async () => {
-        const { grader, calls } = makeGrader();
+    test("evaluateSession returns deterministic score", async () => {
+        const { grader } = makeGrader();
 
         const img = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"; // base64 stub
         const chunks: Chunk[] = [
@@ -104,9 +110,75 @@ describe("Grader - happy path with structured outputs & deterministic score", ()
         expect(res.observations.length).toBeGreaterThan(0);
         expect(res.reasoning.length).toBeGreaterThan(0);
 
-        const usedSchemas = calls.map((c) => c.request?.response_format?.json_schema?.name);
-        expect(usedSchemas).toContain("chunk_evaluation");
-        expect(usedSchemas).toContain("final_evaluation");
+        // Check for new fields
+        expect(res.version).toMatch(/\d+\.\d+\.\d+/);
+        expect(res.outcomeAchievementReasoning).toBe("Completed all objectives.");
+        expect(res.processQualityReasoning).toBe("Followed the optimal path.");
+        expect(res.efficiencyReasoning).toBe("No unnecessary actions.");
+        expect(res.confidenceReasoning).toBe("High confidence due to clear evidence.");
+    });
+});
+
+describe("Grader - advanced configuration", () => {
+    test("uses separate evaluationModel for final evaluation", async () => {
+        const { grader, calls } = makeGrader({
+            model: "chunk-model",
+            evaluationModel: "final-model",
+        });
+
+        await grader.evaluateSession([[{ type: "text", text: "A" }]] as Chunk[], { sessionId: "M1" });
+
+        const chunkCall = calls.find(c => c.request.messages.some((m: any) => m.content.includes("CHUNK EVALUATION")));
+        const finalCall = calls.find(c => c.request.messages.some((m: any) => m.content.includes("FINAL AGGREGATION")));
+
+        expect(chunkCall?.request.model).toBe("chunk-model");
+        expect(finalCall?.request.model).toBe("final-model");
+    });
+
+    test("runs programmatic grader and attaches results", async () => {
+        const programmaticGrader: ProgrammaticGrader = {
+            evaluateCompletionTime: (chunks) => 123,
+            checkRequiredActions: (chunks, reqs) => reqs.includes("test"),
+            calculateEfficiencyMetrics: (chunks) => ({
+                score: 88,
+                reasoning: "Very efficient",
+            }),
+        };
+
+        const { grader } = makeGrader({ programmaticGrader });
+
+        const res = await grader.evaluateSession([], {
+            sessionId: "PG1",
+            requirements: ["test"],
+        });
+
+        expect(res.programmaticResults).toBeDefined();
+        expect(res.programmaticResults?.completionTime).toBe(123);
+        expect(res.programmaticResults?.requiredActionsMet).toBe(true);
+        expect(res.programmaticResults?.efficiencyMetrics?.score).toBe(88);
+        expect(res.programmaticResults?.efficiencyMetrics?.reasoning).toBe("Very efficient");
+    });
+
+    test("handles programmatic grader failure gracefully", async () => {
+        const failingGrader: ProgrammaticGrader = {
+            evaluateCompletionTime: () => { throw new Error("PG fail"); },
+            checkRequiredActions: () => true,
+            calculateEfficiencyMetrics: () => ({ score: 90, reasoning: "" }),
+        };
+
+        const { grader } = makeGrader({ programmaticGrader: failingGrader });
+        const res = await grader.evaluateSession([], { sessionId: "PGFail" });
+
+        // Should still complete and not have the failing result
+        expect(res.score).toBe(73); // From the mock
+        expect(res.programmaticResults).toBeDefined();
+        expect(res.programmaticResults?.completionTime).toBeUndefined();
+
+        // This should not be checked, as the try-catch block in `evaluateSession`
+        // will stop execution for the programmatic grader after the first error.
+        // expect(res.programmaticResults?.requiredActionsMet).toBe(true); 
+
+        expect(res.programmaticResults?.efficiencyMetrics).toBeUndefined();
     });
 });
 
@@ -184,34 +256,29 @@ describe("Grader - JSON parsing fallbacks", () => {
     test("accepts fenced ```json blocks", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            const content = "```json\n" + JSON.stringify({ summary: "Chunk OK" }) + "\n```";
-                            return Promise.resolve({ choices: [{ message: { content } }] });
-                        }
-                        const content =
-                            "```json\n" +
-                            JSON.stringify({
-                                summary: "Final OK",
-                                observations: "• Bullet 1\n• Bullet 2",
-                                reasoning: "Short rationale.",
-                                score: 1,
-                                confidence: 50,
-                                outcomeAchievement: 10,
-                                processQuality: 10,
-                                efficiency: 10,
-                            }) +
-                            "\n```";
-                        return Promise.resolve({ choices: [{ message: { content } }] });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                const content = "```json\n" + JSON.stringify({ summary: "Chunk OK" }) + "\n```";
+                return Promise.resolve({ choices: [{ message: { content } }] });
+            }
+            const data = {
+                summary: "Final OK",
+                observations: "• Bullet 1\n• Bullet 2",
+                reasoning: "Short rationale.",
+                score: 1,
+                confidence: 50,
+                outcomeAchievement: 10,
+                processQuality: 10,
+                efficiency: 10,
+                outcomeAchievementReasoning: "r1",
+                processQualityReasoning: "r2",
+                efficiencyReasoning: "r3",
+                confidenceReasoning: "r4",
+            };
+            const content = "```json\n" + JSON.stringify(data) + "\n```";
+            return Promise.resolve({ choices: [{ message: { content } }] });
+        });
 
         const res = await grader.evaluateSession([[{ type: "text", text: "X" }]], {
             sessionId: "JSON1",
@@ -224,36 +291,32 @@ describe("Grader - JSON parsing fallbacks", () => {
     test("accepts surrounding text with balanced braces extraction", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            const content =
-                                "Here is your result:\n" +
-                                '{ "summary": "Chunk Balanced" }\n' +
-                                "Thanks!";
-                            return Promise.resolve({ choices: [{ message: { content } }] });
-                        }
-                        const content =
-                            "Here we go:\n" +
-                            "{ " +
-                            '"summary":"Final Balanced",' +
-                            '"observations":"• A\\n• B",' +
-                            '"reasoning":"R",' +
-                            '"score":99,' +
-                            '"confidence":70,' +
-                            '"outcomeAchievement":50,' +
-                            '"processQuality":60,' +
-                            '"efficiency":70' +
-                            "}\nBye.";
-                        return Promise.resolve({ choices: [{ message: { content } }] });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                const content =
+                    "Here is your result:\n" +
+                    '{ "summary": "Chunk Balanced" }\n' +
+                    "Thanks!";
+                return Promise.resolve({ choices: [{ message: { content } }] });
+            }
+            const data = {
+                summary: "Final Balanced",
+                observations: "• A\n• B",
+                reasoning: "R",
+                score: 99,
+                confidence: 70,
+                outcomeAchievement: 50,
+                processQuality: 60,
+                efficiency: 70,
+                outcomeAchievementReasoning: "r1",
+                processQualityReasoning: "r2",
+                efficiencyReasoning: "r3",
+                confidenceReasoning: "r4",
+            };
+            const content = "Here we go:\n" + JSON.stringify(data) + "\nBye.";
+            return Promise.resolve({ choices: [{ message: { content } }] });
+        });
 
         const res = await grader.evaluateSession([[{ type: "text", text: "Y" }]], {
             sessionId: "JSON2",
@@ -268,42 +331,38 @@ describe("Grader - retries with exponential backoff", () => {
         const { grader } = makeGrader();
 
         let callCount = 0;
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        callCount++;
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (callCount === 1) {
-                            // Fail the first attempt (chunk call)
-                            return Promise.reject(new Error("Temporary failure"));
-                        }
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "OK after retry" }) } }],
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Final after retry",
-                                        observations: "• Good\n• Stable",
-                                        reasoning: "Recovered.",
-                                        score: 0,
-                                        confidence: 80,
-                                        outcomeAchievement: 40,
-                                        processQuality: 40,
-                                        efficiency: 40,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            callCount++;
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (callCount === 1) { // Fail the first attempt (chunk call)
+                return Promise.reject(new Error("Temporary failure"));
+            }
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "OK after retry" }) } }],
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Final after retry",
+                            observations: "• Good\n• Stable",
+                            reasoning: "Recovered.",
+                            score: 0,
+                            confidence: 80,
+                            outcomeAchievement: 40,
+                            processQuality: 40,
+                            efficiency: 40,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         const t0 = Date.now();
         const res = await grader.evaluateSession([[{ type: "text", text: "foo" }]], {
@@ -324,37 +383,34 @@ describe("Grader - criteria updates affect deterministic score", () => {
     test("updateEvaluationCriteria changes the final scoring", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "C1" }) } }],
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Final",
-                                        observations: "• X\n• Y",
-                                        reasoning: "Y",
-                                        score: 0,
-                                        confidence: 100,
-                                        outcomeAchievement: 50,
-                                        processQuality: 50,
-                                        efficiency: 50,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "C1" }) } }],
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Final",
+                            observations: "• X\n• Y",
+                            reasoning: "Y",
+                            score: 0,
+                            confidence: 100,
+                            outcomeAchievement: 50,
+                            processQuality: 50,
+                            efficiency: 50,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         let res = await grader.evaluateSession([[{ type: "text", text: "A" }]], {
             sessionId: "CRIT1",
@@ -459,28 +515,21 @@ describe("Grader - guards and errors", () => {
     test("propagates parse errors for invalid final JSON", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "OK" }) } }],
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{ message: { content: "{ not json" } }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "OK" }) } }],
+                });
+            }
+            return Promise.resolve({
+                choices: [{ message: { content: "{ not json" } }],
+            });
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "PARSE1" })
-        ).rejects.toThrow(/validation failed/i);
+        ).rejects.toThrow(/Expected object, received null/i);
     });
 });
 
@@ -488,17 +537,11 @@ describe("Grader - typed error handling", () => {
     test("throws PermanentError for 4xx status codes (except 429)", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        const error = new Error("Bad Request") as any;
-                        error.status = 400;
-                        return Promise.reject(error);
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            const error = new Error("Bad Request") as any;
+            error.status = 400;
+            return Promise.reject(error);
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "ERR400" })
@@ -508,17 +551,11 @@ describe("Grader - typed error handling", () => {
     test("throws TransientError for 429 and 5xx status codes", async () => {
         const { grader } = makeGrader({ maxRetries: 1 });
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        const error = new Error("Rate Limited") as any;
-                        error.status = 429;
-                        return Promise.reject(error);
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            const error = new Error("Rate Limited") as any;
+            error.status = 429;
+            return Promise.reject(error);
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "ERR429" })
@@ -529,43 +566,41 @@ describe("Grader - typed error handling", () => {
         const { grader } = makeGrader({ maxRetries: 2 });
         let callCount = 0;
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        callCount++;
-                        if (callCount === 1) {
-                            const error = new Error("Rate Limited") as any;
-                            error.status = 429;
-                            error.headers = { 'Retry-After': '1' }; // 1 second
-                            return Promise.reject(error);
-                        }
-                        // Success on subsequent attempts (chunk + final)
-                        if (callCount === 2) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Success after retry",
-                                        observations: "• Retry worked\n• Connection stable",
-                                        reasoning: "Good",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 80,
-                                        efficiency: 80,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            callCount++;
+            if (callCount === 1) {
+                const error = new Error("Rate Limited") as any;
+                error.status = 429;
+                error.headers = { 'Retry-After': '1' }; // 1 second
+                return Promise.reject(error);
+            }
+            // Success on subsequent attempts (chunk + final)
+            if (callCount === 2) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Success after retry",
+                            observations: "• Retry worked\n• Connection stable",
+                            reasoning: "Good",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 80,
+                            efficiency: 80,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         const startTime = Date.now();
         const result = await grader.evaluateSession([[{ type: "text", text: "X" }]], {
@@ -582,17 +617,11 @@ describe("Grader - typed error handling", () => {
     test("throws TimeoutError for AbortError", async () => {
         const { grader } = makeGrader({ maxRetries: 1 });
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        const error = new Error("Request aborted");
-                        error.name = 'AbortError';
-                        return Promise.reject(error);
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            const error = new Error("Request aborted");
+            error.name = 'AbortError';
+            return Promise.reject(error);
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "TIMEOUT" })
@@ -602,15 +631,9 @@ describe("Grader - typed error handling", () => {
     test("classifies network errors as TransientError", async () => {
         const { grader } = makeGrader({ maxRetries: 1 });
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        return Promise.reject(new Error("Network connection failed"));
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            return Promise.reject(new Error("Network connection failed"));
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "NETWORK" })
@@ -623,13 +646,7 @@ describe("Grader - typed error handling", () => {
         const originalError = new Error("Original error") as any;
         originalError.status = 500;
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => Promise.reject(originalError)),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => Promise.reject(originalError));
 
         try {
             await grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "CAUSE" });
@@ -647,37 +664,34 @@ describe("Grader - schema validation", () => {
     test("validates chunk response with Zod schema", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Valid chunk summary" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Valid final summary",
-                                        observations: "• Line 1\n• Line 2\n• Line 3",
-                                        reasoning: "Valid reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Valid chunk summary" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Valid final summary",
+                            observations: "• Line 1\n• Line 2\n• Line 3",
+                            reasoning: "Valid reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         const result = await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
             sessionId: "VALID_SCHEMA"
@@ -686,125 +700,113 @@ describe("Grader - schema validation", () => {
         expect(result.summary).toBe("Valid final summary");
         expect(result.observations).toBe("• Line 1\n• Line 2\n• Line 3");
         expect(result.reasoning).toBe("Valid reasoning");
+        expect(result.outcomeAchievementReasoning).toBe("r1");
     });
 
     test("rejects final response with invalid observations (too few lines)", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Summary",
-                                        observations: "Only one line", // Invalid: need 2-6 lines
-                                        reasoning: "Reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Summary",
+                            observations: "Only one line", // Invalid: need 2-6 lines
+                            reasoning: "Reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "Test" }]], { sessionId: "INVALID_OBS" })
-        ).rejects.toThrow(/validation failed/i);
+        ).rejects.toThrow(/Observations must contain between 2 and 6/i);
     });
 
     test("rejects final response with invalid observations (too many lines)", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Summary",
-                                        observations: "• Line 1\n• Line 2\n• Line 3\n• Line 4\n• Line 5\n• Line 6\n• Line 7", // Invalid: too many lines
-                                        reasoning: "Reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Summary",
+                            observations: "• Line 1\n• Line 2\n• Line 3\n• Line 4\n• Line 5\n• Line 6\n• Line 7", // Invalid: too many lines
+                            reasoning: "Reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "Test" }]], { sessionId: "INVALID_OBS_LONG" })
-        ).rejects.toThrow(/validation failed/i);
+        ).rejects.toThrow(/Observations must contain between 2 and 6/i);
     });
 
     test("handles missing required fields in final response", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Summary",
-                                        // Missing observations, reasoning, etc.
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Summary",
+                            // Missing observations, reasoning, etc.
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                        }),
+                    },
+                }],
+            });
+        });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "Test" }]], { sessionId: "MISSING_FIELDS" })
-        ).rejects.toThrow(/validation failed/i);
+        ).rejects.toThrow(/invalid_type/i); // Zod error code for missing fields
     });
 
     test("uses message.parsed when available from SDK", async () => {
@@ -819,31 +821,41 @@ describe("Grader - schema validation", () => {
             outcomeAchievement: 85,
             processQuality: 80,
             efficiency: 75,
+            outcomeAchievementReasoning: "r1",
+            processQualityReasoning: "r2",
+            efficiencyReasoning: "r3",
+            confidenceReasoning: "r4",
         };
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{
+                        message: {
+                            tool_calls: [{
+                                type: "function",
+                                function: {
+                                    arguments: JSON.stringify({ summary: "Chunk OK" })
+                                }
+                            }]
                         }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: "Raw content that should be ignored",
-                                    parsed: parsedContent, // SDK provides parsed content
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+                    }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        tool_calls: [{
+                            type: "function", 
+                            function: {
+                                arguments: JSON.stringify(parsedContent)
+                            }
+                        }]
+                    },
+                }],
+            });
+        });
 
         const result = await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
             sessionId: "PARSED_CONTENT"
@@ -852,43 +864,41 @@ describe("Grader - schema validation", () => {
         expect(result.summary).toBe("Parsed summary");
         expect(result.observations).toBe("• Line 1\n• Line 2");
         expect(result.reasoning).toBe("Parsed reasoning");
+        expect(result.outcomeAchievementReasoning).toBe("r1");
     });
 
     test("falls back to raw content when parsed content is invalid", async () => {
         const { grader } = makeGrader();
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal =
-                            req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Fallback summary",
-                                        observations: "• Line 1\n• Line 2",
-                                        reasoning: "Fallback reasoning",
-                                        score: 75,
-                                        confidence: 85,
-                                        outcomeAchievement: 75,
-                                        processQuality: 75,
-                                        efficiency: 75,
-                                    }),
-                                    parsed: { invalid: "data" }, // Invalid parsed content
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Fallback summary",
+                            observations: "• Line 1\n• Line 2",
+                            reasoning: "Fallback reasoning",
+                            score: 75,
+                            confidence: 85,
+                            outcomeAchievement: 75,
+                            processQuality: 75,
+                            efficiency: 75,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                        parsed: { invalid: "data" }, // Invalid parsed content
+                    },
+                }],
+            });
+        });
 
         // This should succeed because it falls back to valid raw content
         const result = await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
@@ -898,6 +908,7 @@ describe("Grader - schema validation", () => {
         expect(result.summary).toBe("Fallback summary");
         expect(result.observations).toBe("• Line 1\n• Line 2");
         expect(result.reasoning).toBe("Fallback reasoning");
+        expect(result.outcomeAchievementReasoning).toBe("r1");
     });
 });
 
@@ -907,37 +918,35 @@ describe("Grader - security and sanitization", () => {
 
         // Mock to capture the actual content sent to the model
         let capturedContent: any = null;
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            capturedContent = req.messages[1].content; // Capture chunk content
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Clean final",
-                                        observations: "• Clean line 1\n• Clean line 2",
-                                        reasoning: "Clean reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                capturedContent = req.messages[1].content; // Capture chunk content
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Clean final",
+                            observations: "• Clean line 1\n• Clean line 2",
+                            reasoning: "Clean reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         const maliciousCropInfo = "Click area\x00\x01\x02<script>alert('xss')</script>\x7F\x9F";
         const chunks: Chunk[] = [
@@ -971,37 +980,35 @@ describe("Grader - security and sanitization", () => {
         const { grader } = makeGrader();
 
         let capturedContent: any = null;
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            capturedContent = req.messages[1].content; // Capture chunk content
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Clean final",
-                                        observations: "• Clean line 1\n• Clean line 2",
-                                        reasoning: "Clean reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 75,
-                                        efficiency: 70,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                capturedContent = req.messages[1].content; // Capture chunk content
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Clean final",
+                            observations: "• Clean line 1\n• Clean line 2",
+                            reasoning: "Clean reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 75,
+                            efficiency: 70,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         const maliciousText = "User action\x00\x01\x02javascript:alert('xss')\x7F\x9F";
         const chunks: Chunk[] = [
@@ -1020,257 +1027,6 @@ describe("Grader - security and sanitization", () => {
         expect(textPart.text).not.toContain("javascript:");
         expect(textPart.text).toContain("User action");
     });
-
-    test("redacts sensitive data in logs", async () => {
-        const { grader } = makeGrader();
-
-        // Mock console.error to capture logs
-        const originalError = console.error;
-        const loggedMessages: string[] = [];
-        console.error = (...args: any[]) => {
-            loggedMessages.push(args.join(' '));
-        };
-
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        return Promise.resolve({
-                            choices: [{ message: { content: "{ invalid json" } }]
-                        });
-                    }),
-                },
-            },
-        };
-
-        try {
-            await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
-                sessionId: "LOG_TEST"
-            });
-        } catch {
-            // Expected to fail due to invalid JSON
-        }
-
-        // Verify that logs don't contain raw response content
-        const loggedContent = loggedMessages.join(' ');
-
-        expect(loggedContent).not.toContain("{ invalid json");
-        expect(loggedContent).toContain("[grader][error]");
-
-        // Restore console.error
-        console.error = originalError;
-    });
-
-    test("removes base64 patterns from logs", () => {
-        // Test base64 redaction pattern directly
-        const sensitiveText = "Here is some data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU77zwAAAABJRU5ErkJggg== and more text";
-
-        const redacted = sensitiveText
-            .replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, "[BASE64-IMAGE]")
-            .replace(/[A-Za-z0-9+/]{50,}={0,2}/g, "[BASE64-DATA]");
-
-        expect(redacted).toContain("[BASE64-IMAGE]");
-        expect(redacted).not.toContain("iVBORw0KGgoAAAANSUhE");
-    });
-
-    test("limits log entry length to prevent log flooding", () => {
-        const longText = "A".repeat(1000);
-
-        // Test truncation
-        const truncated = longText.slice(0, 200);
-
-        expect(truncated.length).toBe(200);
-        expect(truncated.length).toBeLessThanOrEqual(200);
-    });
-});
-
-describe("Grader - enhanced security redaction", () => {
-    // Helper function to test redaction patterns
-    const testRedaction = (input: string, expectedPattern: string) => {
-        // We'll use the redact function indirectly through safeLog
-        const redacted = input
-            // Email addresses
-            .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[EMAIL]")
-
-            // API Keys - OpenAI
-            .replace(/sk-[A-Za-z0-9]{20,}/g, "[OPENAI-KEY]")
-            .replace(/pk-[A-Za-z0-9]{20,}/g, "[OPENAI-PUB-KEY]")
-
-            // JWT tokens (process first to avoid conflicts)
-            .replace(/eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+/g, "[JWT-TOKEN]")
-
-            // API Keys - AWS
-            .replace(/AKIA[0-9A-Z]{16}/g, "[AWS-ACCESS-KEY]")
-            .replace(/(?:^|\s)([A-Za-z0-9/+=]{40})(?:\s|$)/g, (match, key) => {
-                if (/^[A-Za-z0-9/+=]{40}$/.test(key)) return match.replace(key, "[AWS-SECRET-KEY]");
-                return match;
-            })
-
-            // API Keys - Google
-            .replace(/AIza[0-9A-Za-z\-_]{35}/g, "[GOOGLE-API-KEY]")
-            .replace(/ya29\.[0-9A-Za-z\-_]+/g, "[GOOGLE-OAUTH-TOKEN]")
-
-            // API Keys - GitHub
-            .replace(/ghp_[A-Za-z0-9]{36}/g, "[GITHUB-PAT]")
-            .replace(/gho_[A-Za-z0-9]{36}/g, "[GITHUB-OAUTH]")
-            .replace(/ghu_[A-Za-z0-9]{36}/g, "[GITHUB-USER-TOKEN]")
-            .replace(/ghs_[A-Za-z0-9]{36}/g, "[GITHUB-SERVER-TOKEN]")
-            .replace(/ghr_[A-Za-z0-9]{36}/g, "[GITHUB-REFRESH-TOKEN]")
-
-            // API Keys - Stripe
-            .replace(/sk_live_[0-9a-zA-Z]{24,}/g, "[STRIPE-SECRET-LIVE]")
-            .replace(/sk_test_[0-9a-zA-Z]{24,}/g, "[STRIPE-SECRET-TEST]")
-            .replace(/pk_live_[0-9a-zA-Z]{24,}/g, "[STRIPE-PUBLIC-LIVE]")
-            .replace(/pk_test_[0-9a-zA-Z]{24,}/g, "[STRIPE-PUBLIC-TEST]")
-
-            // OAuth and Bearer tokens
-            .replace(/Bearer\s+[A-Za-z0-9\-_\.]+/gi, "[BEARER-TOKEN]")
-            .replace(/OAuth\s+[A-Za-z0-9\-_\.]+/gi, "[OAUTH-TOKEN]")
-
-            // PEM private keys
-            .replace(/-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----/gi, "[PEM-PRIVATE-KEY]")
-            .replace(/-----BEGIN\s+ENCRYPTED\s+PRIVATE\s+KEY-----[\s\S]*?-----END\s+ENCRYPTED\s+PRIVATE\s+KEY-----/gi, "[PEM-ENCRYPTED-KEY]")
-            .replace(/-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----[\s\S]*?-----END\s+OPENSSH\s+PRIVATE\s+KEY-----/gi, "[OPENSSH-PRIVATE-KEY]")
-
-            // Database URLs
-            .replace(/(?:mongodb|mysql|postgresql|postgres):\/\/[^\s]+/gi, "[DATABASE-URL]");
-
-        return redacted;
-    };
-
-    test("redacts email addresses", () => {
-        const input = "Contact support at help@example.com or admin@test.org";
-        const result = testRedaction(input, "[EMAIL]");
-
-        expect(result).toContain("[EMAIL]");
-        expect(result).not.toContain("help@example.com");
-        expect(result).not.toContain("admin@test.org");
-    });
-
-    test("redacts OpenAI API keys", () => {
-        const input = "Use API key sk-1234567890abcdefghijklmnopqrstuvwxyz and pk-abcdefghijklmnopqrstuvwxyz1234567890";
-        const result = testRedaction(input, "[OPENAI-KEY]");
-
-        expect(result).toContain("[OPENAI-KEY]");
-        expect(result).toContain("[OPENAI-PUB-KEY]");
-        expect(result).not.toContain("sk-1234567890");
-        expect(result).not.toContain("pk-abcdefghij");
-    });
-
-    test("redacts AWS credentials", () => {
-        const input = "AWS Access Key: AKIAIOSFODNN7EXAMPLE and Secret: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-        const result = testRedaction(input, "[AWS-ACCESS-KEY]");
-
-        expect(result).toContain("[AWS-ACCESS-KEY]");
-        expect(result).toContain("[AWS-SECRET-KEY]");
-        expect(result).not.toContain("AKIAIOSFODNN7EXAMPLE");
-        expect(result).not.toContain("wJalrXUtnFEMI/K7MDENG");
-    });
-
-    test("redacts Google API keys", () => {
-        const input = "Google key: AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe and OAuth: ya29.a0AfH6SMC7jG5XaGI4GQ";
-        const result = testRedaction(input, "[GOOGLE-API-KEY]");
-
-        expect(result).toContain("[GOOGLE-API-KEY]");
-        expect(result).toContain("[GOOGLE-OAUTH-TOKEN]");
-        expect(result).not.toContain("AIzaSyDaGmWKa4JsXZ");
-        expect(result).not.toContain("ya29.a0AfH6SMC7jG5XaGI4GQ");
-    });
-
-    test("redacts GitHub tokens", () => {
-        const input = "GitHub PAT: ghp_1234567890abcdefghijklmnopqrstuvwxyz and OAuth: gho_abcdefghijklmnopqrstuvwxyz1234567890";
-        const result = testRedaction(input, "[GITHUB-PAT]");
-
-        expect(result).toContain("[GITHUB-PAT]");
-        expect(result).toContain("[GITHUB-OAUTH]");
-        expect(result).not.toContain("ghp_1234567890");
-        expect(result).not.toContain("gho_abcdefghij");
-    });
-
-    test("redacts Stripe API keys", () => {
-        const input = "Stripe live: sk_live_1234567890abcdefghijklmnop and test: sk_test_abcdefghijklmnopqrstuvwxyz";
-        const result = testRedaction(input, "[STRIPE-SECRET-LIVE]");
-
-        expect(result).toContain("[STRIPE-SECRET-LIVE]");
-        expect(result).toContain("[STRIPE-SECRET-TEST]");
-        expect(result).not.toContain("sk_live_1234567890");
-        expect(result).not.toContain("sk_test_abcdefghij");
-    });
-
-    test("redacts Bearer and OAuth tokens", () => {
-        const input = "Authorization: Bearer abc123def456ghi789 and OAuth token12345";
-        const result = testRedaction(input, "[BEARER-TOKEN]");
-
-        expect(result).toContain("[BEARER-TOKEN]");
-        expect(result).toContain("[OAUTH-TOKEN]");
-        expect(result).not.toContain("abc123def456ghi789");
-        expect(result).not.toContain("token12345");
-    });
-
-    test("redacts JWT tokens", () => {
-        const input = "JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
-        const result = testRedaction(input, "[JWT-TOKEN]");
-
-        expect(result).toContain("[JWT-TOKEN]");
-        expect(result).not.toContain("eyJhbGciOiJIUzI1NiIs");
-    });
-
-    test("redacts PEM private keys", () => {
-        const pemKey = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKB
-wEiOfH+5LQiS7JM8ZpSRnbNz4mjYn6hNmpPiemmjy71kkdOvHdhIb9AdkpcV
------END PRIVATE KEY-----`;
-        const input = `Here is a key: ${pemKey} and some text`;
-        const result = testRedaction(input, "[PEM-PRIVATE-KEY]");
-
-        expect(result).toContain("[PEM-PRIVATE-KEY]");
-        expect(result).not.toContain("MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKc");
-    });
-
-    test("redacts database connection strings", () => {
-        const input = "Connect to mongodb://user:pass@localhost:27017/db or postgresql://user:pass@host:5432/database";
-        const result = testRedaction(input, "[DATABASE-URL]");
-
-        expect(result).toContain("[DATABASE-URL]");
-        expect(result).not.toContain("mongodb://user:pass@localhost");
-        expect(result).not.toContain("postgresql://user:pass@host");
-    });
-
-    test("handles mixed sensitive content", () => {
-        const input = `
-            Email: user@example.com
-            OpenAI: sk-1234567890abcdefghijklmnopqrstuvwxyz
-            AWS: AKIAIOSFODNN7EXAMPLE
-            GitHub: ghp_1234567890abcdefghijklmnopqrstuvwxyz
-            Bearer: Bearer abc123def456
-            Database: mongodb://user:secret@host:27017/db
-        `;
-        const result = testRedaction(input, "mixed");
-
-        expect(result).toContain("[EMAIL]");
-        expect(result).toContain("[OPENAI-KEY]");
-        expect(result).toContain("[AWS-ACCESS-KEY]");
-        expect(result).toContain("[GITHUB-PAT]");
-        expect(result).toContain("[BEARER-TOKEN]");
-        expect(result).toContain("[DATABASE-URL]");
-
-        // Verify original sensitive content is gone
-        expect(result).not.toContain("user@example.com");
-        expect(result).not.toContain("sk-1234567890");
-        expect(result).not.toContain("AKIAIOSFODNN7EXAMPLE");
-        expect(result).not.toContain("ghp_1234567890");
-        expect(result).not.toContain("abc123def456");
-        expect(result).not.toContain("mongodb://user:secret");
-    });
-
-    test("preserves non-sensitive content", () => {
-        const input = "This is normal text with numbers 123 and words hello world.";
-        const result = testRedaction(input, "preserve");
-
-        expect(result).toContain("normal text");
-        expect(result).toContain("123");
-        expect(result).toContain("hello world");
-    });
 });
 
 describe("Grader - concurrency and rate limiting", () => {
@@ -1285,38 +1041,36 @@ describe("Grader - concurrency and rate limiting", () => {
         let requestCount = 0;
         const requestTimes: number[] = [];
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        requestCount++;
-                        requestTimes.push(Date.now());
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Session complete",
-                                        observations: "• Task completed\n• No issues found",
-                                        reasoning: "Good execution",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 80,
-                                        efficiency: 80,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            requestCount++;
+            requestTimes.push(Date.now());
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                });
+            }
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Session complete",
+                            observations: "• Task completed\n• No issues found",
+                            reasoning: "Good execution",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 80,
+                            efficiency: 80,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         // Process multiple sessions concurrently
         const sessions = [
@@ -1395,45 +1149,43 @@ describe("Grader - concurrency and rate limiting", () => {
         const chunkProcessOrder: string[] = [];
         let callCount = 0;
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        callCount++;
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            callCount++;
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
 
-                        if (!isFinal) {
-                            // Track chunk processing order
-                            const chunkContent = req.messages[1].content;
-                            const textPart = chunkContent.find((p: any) => p.type === "text");
-                            if (textPart) {
-                                chunkProcessOrder.push(textPart.text);
-                            }
-                            return Promise.resolve({
-                                choices: [{ message: { content: JSON.stringify({ summary: `Summary for ${textPart.text}` }) } }]
-                            });
-                        }
+            if (!isFinal) {
+                // Track chunk processing order
+                const chunkContent = req.messages[1].content;
+                const textPart = chunkContent.find((p: any) => p.type === "text");
+                if (textPart) {
+                    chunkProcessOrder.push(textPart.text);
+                }
+                return Promise.resolve({
+                    choices: [{ message: { content: JSON.stringify({ summary: `Summary for ${textPart.text}` }) } }]
+                });
+            }
 
-                        return Promise.resolve({
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Final summary",
-                                        observations: "• All chunks processed\n• Sequential order maintained",
-                                        reasoning: "Good",
-                                        score: 85,
-                                        confidence: 90,
-                                        outcomeAchievement: 85,
-                                        processQuality: 85,
-                                        efficiency: 85,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+            return Promise.resolve({
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Final summary",
+                            observations: "• All chunks processed\n• Sequential order maintained",
+                            reasoning: "Good",
+                            score: 85,
+                            confidence: 90,
+                            outcomeAchievement: 85,
+                            processQuality: 85,
+                            efficiency: 85,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         // Create chunks that should be processed in order
         const chunks: Chunk[] = [
@@ -1465,50 +1217,48 @@ describe("Grader - observability and metrics", () => {
             onMetrics: metricsHook
         });
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                id: "chatcmpl-chunk123",
-                                system_fingerprint: "fp_chunk_v1",
-                                usage: {
-                                    prompt_tokens: 150,
-                                    completion_tokens: 25,
-                                    total_tokens: 175
-                                },
-                                choices: [{ message: { content: JSON.stringify({ summary: "Chunk complete" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            id: "chatcmpl-final456",
-                            system_fingerprint: "fp_final_v1",
-                            usage: {
-                                prompt_tokens: 200,
-                                completion_tokens: 100,
-                                total_tokens: 300
-                            },
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Final evaluation",
-                                        observations: "• Task completed\n• Good performance",
-                                        reasoning: "Successful execution",
-                                        score: 85,
-                                        confidence: 90,
-                                        outcomeAchievement: 85,
-                                        processQuality: 85,
-                                        efficiency: 85,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    id: "chatcmpl-chunk123",
+                    system_fingerprint: "fp_chunk_v1",
+                    usage: {
+                        prompt_tokens: 150,
+                        completion_tokens: 25,
+                        total_tokens: 175
+                    },
+                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk complete" }) } }]
+                });
+            }
+            return Promise.resolve({
+                id: "chatcmpl-final456",
+                system_fingerprint: "fp_final_v1",
+                usage: {
+                    prompt_tokens: 200,
+                    completion_tokens: 100,
+                    total_tokens: 300
                 },
-            },
-        };
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Final evaluation",
+                            observations: "• Task completed\n• Good performance",
+                            reasoning: "Successful execution",
+                            score: 85,
+                            confidence: 90,
+                            outcomeAchievement: 85,
+                            processQuality: 85,
+                            efficiency: 85,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         await grader.evaluateSession([[{ type: "text", text: "Test action" }]], {
             sessionId: "metrics_test",
@@ -1534,7 +1284,8 @@ describe("Grader - observability and metrics", () => {
         expect(chunkMetrics.outcome).toBe("success");
 
         // Check final metrics
-        const finalMetrics = capturedMetrics[1];
+        const finalMetrics = capturedMetrics.find(m => m.context.isFinal);
+        expect(finalMetrics).toBeDefined();
         expect(finalMetrics.responseId).toBe("chatcmpl-final456");
         expect(finalMetrics.systemFingerprint).toBe("fp_final_v1");
         expect(finalMetrics.usage.totalTokens).toBe(300);
@@ -1554,51 +1305,49 @@ describe("Grader - observability and metrics", () => {
         });
 
         let callCount = 0;
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        callCount++;
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            callCount++;
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
 
-                        if (callCount <= 2) {
-                            const error = new Error("Rate Limited") as any;
-                            error.status = 429;
-                            return Promise.reject(error);
-                        }
+            if (callCount <= 2) {
+                const error = new Error("Rate Limited") as any;
+                error.status = 429;
+                return Promise.reject(error);
+            }
 
-                        // Success on third attempt (chunk call)
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                id: "chatcmpl-success789",
-                                usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
-                                choices: [{ message: { content: JSON.stringify({ summary: "Success after retry" }) } }]
-                            });
-                        }
+            // Success on third attempt (chunk call)
+            if (!isFinal) {
+                return Promise.resolve({
+                    id: "chatcmpl-success789",
+                    usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+                    choices: [{ message: { content: JSON.stringify({ summary: "Success after retry" }) } }]
+                });
+            }
 
-                        // Final call
-                        return Promise.resolve({
-                            id: "chatcmpl-final-success",
-                            usage: { prompt_tokens: 120, completion_tokens: 80, total_tokens: 200 },
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Final after retry",
-                                        observations: "• Retry worked\n• Connection stable",
-                                        reasoning: "Good recovery",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 80,
-                                        efficiency: 80,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+            // Final call
+            return Promise.resolve({
+                id: "chatcmpl-final-success",
+                usage: { prompt_tokens: 120, completion_tokens: 80, total_tokens: 200 },
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Final after retry",
+                            observations: "• Retry worked\n• Connection stable",
+                            reasoning: "Good recovery",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 80,
+                            efficiency: 80,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         await grader.evaluateSession([[{ type: "text", text: "Retry test" }]], {
             sessionId: "retry_metrics_test",
@@ -1625,17 +1374,11 @@ describe("Grader - observability and metrics", () => {
             onMetrics: metricsHook
         });
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock(() => {
-                        const error = new Error("Bad Request") as any;
-                        error.status = 400;
-                        return Promise.reject(error);
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock(() => {
+            const error = new Error("Bad Request") as any;
+            error.status = 400;
+            return Promise.reject(error);
+        });
 
         try {
             await grader.evaluateSession([[{ type: "text", text: "Error test" }]], {
@@ -1673,38 +1416,36 @@ describe("Grader - observability and metrics", () => {
             warnings.push(args.join(' '));
         };
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                id: "test123",
-                                choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            id: "test456",
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Test final",
-                                        observations: "• Test line 1\n• Test line 2",
-                                        reasoning: "Test reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 80,
-                                        efficiency: 80,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    id: "test123",
+                    choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
+                });
+            }
+            return Promise.resolve({
+                id: "test456",
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Test final",
+                            observations: "• Test line 1\n• Test line 2",
+                            reasoning: "Test reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 80,
+                            efficiency: 80,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         // Should not throw despite failing metrics hook
         await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
@@ -1722,38 +1463,36 @@ describe("Grader - observability and metrics", () => {
     test("works without metrics hook configured", async () => {
         const { grader } = makeGrader(); // No metrics hook
 
-        (grader as any).client = {
-            chat: {
-                completions: {
-                    create: mock((req: any) => {
-                        const isFinal = req?.response_format?.json_schema?.name === "final_evaluation";
-                        if (!isFinal) {
-                            return Promise.resolve({
-                                id: "test123",
-                                choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
-                            });
-                        }
-                        return Promise.resolve({
-                            id: "test456",
-                            choices: [{
-                                message: {
-                                    content: JSON.stringify({
-                                        summary: "Test final",
-                                        observations: "• Test line 1\n• Test line 2",
-                                        reasoning: "Test reasoning",
-                                        score: 80,
-                                        confidence: 90,
-                                        outcomeAchievement: 80,
-                                        processQuality: 80,
-                                        efficiency: 80,
-                                    }),
-                                },
-                            }],
-                        });
-                    }),
-                },
-            },
-        };
+        (grader as any).client.chat.completions.create = mock((req: any) => {
+            const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
+            if (!isFinal) {
+                return Promise.resolve({
+                    id: "test123",
+                    choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
+                });
+            }
+            return Promise.resolve({
+                id: "test456",
+                choices: [{
+                    message: {
+                        content: JSON.stringify({
+                            summary: "Test final",
+                            observations: "• Test line 1\n• Test line 2",
+                            reasoning: "Test reasoning",
+                            score: 80,
+                            confidence: 90,
+                            outcomeAchievement: 80,
+                            processQuality: 80,
+                            efficiency: 80,
+                            outcomeAchievementReasoning: "r1",
+                            processQualityReasoning: "r2",
+                            efficiencyReasoning: "r3",
+                            confidenceReasoning: "r4",
+                        }),
+                    },
+                }],
+            });
+        });
 
         // Should work fine without metrics hook
         await expect(

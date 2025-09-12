@@ -77,6 +77,12 @@ const { values } = parseArgs({
     ffprobe: {
       type: 'string',
       default: 'ffprobe'
+    },
+    'model': {
+      type: 'string'
+    },
+    'evaluation-model': {
+      type: 'string'
     }
   },
   strict: true,
@@ -177,11 +183,12 @@ async function gradeSftFile(
   const result = await grader.evaluateSession(chunks, meta);
   if (result) {
     console.log('\nGrading complete!');
-    console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence).toFixed(1)}%)`);
+    console.log(`\nCQA version: ${result.version}`);
+    console.log(`Score: ${result.score}/100 (Confidence: ${(result.confidence).toFixed(1)}%) - ${result.confidenceReasoning}`);
     console.log('\nScore Breakdown:');
-    console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100`);
-    console.log(`- Process Quality: ${result.processQuality}/100`);
-    console.log(`- Efficiency: ${result.efficiency}/100`);
+    console.log(`- Outcome Achievement: ${result.outcomeAchievement}/100 - ${result.outcomeAchievementReasoning}`);
+    console.log(`- Process Quality: ${result.processQuality}/100 - ${result.processQualityReasoning}`);
+    console.log(`- Efficiency: ${result.efficiency}/100 - ${result.efficiencyReasoning}`);
     console.log('\nSummary:');
     console.log(result.summary);
     console.log('\nObservations:');
@@ -253,6 +260,8 @@ async function processAllSessions() {
       {
         apiKey: process.env.OPENAI_API_KEY!,
         chunkSize,
+        model: values.model,
+        evaluationModel: values['evaluation-model'],
         timeout: 60_000,
         maxRetries: 3,
         seed: 42,
