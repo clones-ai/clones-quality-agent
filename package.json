@@ -1,6 +1,6 @@
 {
   "name": "clones-quality-agent",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "scripts": {
     "test": "bun test",
     "test:grading": "bun run scripts/test-grading.ts",
@@ -19,11 +19,11 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
-    "canvas": "^3.1.2",
+    "canvas": "^3.2.0",
     "cli-table3": "^0.6.5",
-    "mongodb": "^6.18.0",
+    "mongodb": "^6.19.0",
     "ndjson": "^2.0.0",
-    "openai": "^5.12.2",
+    "openai": "^5.20.1",
     "sharp": "^0.34.3",
     "tesseract.js": "^6.0.1",
     "tiktoken": "^1.0.22",

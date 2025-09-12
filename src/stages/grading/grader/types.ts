@@ -1,4 +1,6 @@
 export interface GradeResult {
+    /** The version of the Clones Quality Agent that produced this result. */
+    version: string;
     /** One-paragraph outcome summary. */
     summary: string;
     /** Brief, high-level observations (2–6 lines). No chain-of-thought. */
@@ -13,14 +15,30 @@ export interface GradeResult {
     outcomeAchievement: number;
     processQuality: number;
     efficiency: number;
+    /** Justification for the outcome achievement score. */
+    outcomeAchievementReasoning: string;
+    /** Justification for the process quality score. */
+    processQualityReasoning: string;
+    /** Justification for the efficiency score. */
+    efficiencyReasoning: string;
+    /** Justification for the confidence score. */
+    confidenceReasoning: string;
+    /** Results from programmatic graders, if any were provided. */
+    programmaticResults?: {
+        completionTime?: number;
+        requiredActionsMet?: boolean;
+        efficiencyMetrics?: EfficiencyScore;
+    };
 }
 
 export interface GraderConfig {
     apiKey: string;
     /** Number of events per chunk (pipeline-level slicing), if applicable. */
     chunkSize?: number;
-    /** Model name (e.g., 'gpt-4o'). */
+    /** Model name for chunk evaluation (e.g., 'gpt-4o'). */
     model?: string;
+    /** Optional model name for final evaluation. Falls back to `model` if not provided. */
+    evaluationModel?: string;
     /** Per-request timeout in ms (default: 60000). */
     timeout?: number;
     /** Maximum retries per request (default: 3). */
@@ -38,6 +56,8 @@ export interface GraderConfig {
     };
     /** Optional metrics hook for observability. */
     onMetrics?: MetricsHook;
+    /** Optional programmatic grader to run alongside the LLM. */
+    programmaticGrader?: ProgrammaticGrader;
 }
 
 export interface GraderLogger {
@@ -92,6 +112,8 @@ export interface MetaData {
     sessionId: string;
     taskDescription?: string;
     platform?: "web" | "desktop" | "other";
+    /** Optional list of requirements for the `checkRequiredActions` programmatic grader. */
+    requirements?: string[];
 }
 
 /** Input items the model can consume for each chunk. */
@@ -114,4 +136,25 @@ export interface EvaluationCriteria {
     outcomeAchievement: { weight: number };
     processQuality: { weight: number };
     efficiency: { weight: number };
+}
+
+/**
+ * Defines a programmatic grader that can run alongside the LLM-based grader.
+ * This allows for deterministic, rule-based checks that complement the LLM's qualitative assessment.
+ */
+export interface ProgrammaticGrader {
+    /** Calculates a score based on total session time. */
+    evaluateCompletionTime(chunks: Chunk[]): number;
+    /** Checks if a set of required actions were performed. */
+    checkRequiredActions(chunks: Chunk[], requirements: string[]): boolean;
+    /** Computes efficiency metrics like clicks, keypresses, etc. */
+    calculateEfficiencyMetrics(chunks: Chunk[]): EfficiencyScore;
+}
+
+/** Represents the output of an efficiency metric calculation. */
+export interface EfficiencyScore {
+    /** A score from 0 to 100. */
+    score: number;
+    /** A brief justification for the score. */
+    reasoning: string;
 }
