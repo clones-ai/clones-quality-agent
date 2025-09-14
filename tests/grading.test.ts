@@ -2,8 +2,7 @@ import { describe, test, expect } from "bun:test";
 import {
     Chunk,
     GraderConfig,
-    ProgrammaticGrader,
-} from "../src/stages/grading/grader/types";
+    ProgrammaticGrader} from "../src/stages/grading/grader/types";
 import {
     PermanentError,
     TimeoutError,
@@ -31,8 +30,7 @@ type CreateCall = {
 function makeGrader(overrides: Partial<GraderConfig> = {}) {
     const grader = new Grader({
         apiKey: "sk-test",
-        ...overrides,
-    });
+        ...overrides});
 
     const calls: CreateCall[] = [];
     const create = mock((req: any) => {
@@ -42,10 +40,19 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
         if (!isFinal) {
             const data = { summary: "User opened settings" };
             return Promise.resolve({
-                choices: [{ message: { content: JSON.stringify(data) } }],
+                choices: [{ message: { 
+                    content: null,
+                    tool_calls: [{
+                        id: "call_123",
+                        type: "function",
+                        function: {
+                            name: "evaluate_chunk", 
+                            arguments: JSON.stringify(data)
+                        }
+                    }]
+                } }],
                 usage: { total_tokens: 100 },
-                id: "chunk_resp_id",
-            });
+                id: "chunk_resp_id"});
         } else {
             const data = {
                 summary: "Overall, the user completed most goals.",
@@ -60,10 +67,19 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
                 outcomeAchievementReasoning: "Completed all objectives.",
                 processQualityReasoning: "Followed the optimal path.",
                 efficiencyReasoning: "No unnecessary actions.",
-                confidenceReasoning: "High confidence due to clear evidence.",
-            };
+                confidenceReasoning: "High confidence due to clear evidence."};
             return Promise.resolve({
-                choices: [{ message: { content: JSON.stringify(data) } }],
+                choices: [{ message: { 
+                    content: null,
+                    tool_calls: [{
+                        id: "call_456",
+                        type: "function", 
+                        function: {
+                            name: "evaluate_final",
+                            arguments: JSON.stringify(data)
+                        }
+                    }]
+                } }],
                 usage: { total_tokens: 200, prompt_tokens: 150, completion_tokens: 50 },
                 id: "final_resp_id",
                 system_fingerprint: "fp_12345"
@@ -74,10 +90,7 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
     (grader as any).client = {
         chat: {
             completions: {
-                create,
-            },
-        },
-    };
+                create}}};
 
     return { grader, create, calls };
 }
@@ -90,16 +103,13 @@ describe("Grader - happy path with structured outputs & deterministic score", ()
         const chunks: Chunk[] = [
             [
                 { type: "text", text: "Open settings window" },
-                { type: "image", data: img, mime: "image/png", cropInfo: "Clicked top-right gear" },
-            ],
-            [{ type: "text", text: "Change configuration value and save" }],
-        ];
+                { type: "image", data: img, mime: "image/png", cropInfo: "Clicked top-right gear" }],
+            [{ type: "text", text: "Change configuration value and save" }]];
 
         const res = await grader.evaluateSession(chunks, {
             sessionId: "S1",
             platform: "desktop",
-            taskDescription: "Update application setting",
-        });
+            taskDescription: "Update application setting"});
 
         expect(res.score).toBe(73); // 0.5*80 + 0.3*70 + 0.2*60
         expect(res.outcomeAchievement).toBe(80);
@@ -123,8 +133,7 @@ describe("Grader - advanced configuration", () => {
     test("uses separate evaluationModel for final evaluation", async () => {
         const { grader, calls } = makeGrader({
             model: "chunk-model",
-            evaluationModel: "final-model",
-        });
+            evaluationModel: "final-model"});
 
         await grader.evaluateSession([[{ type: "text", text: "A" }]] as Chunk[], { sessionId: "M1" });
 
@@ -141,16 +150,13 @@ describe("Grader - advanced configuration", () => {
             checkRequiredActions: (chunks, reqs) => reqs.includes("test"),
             calculateEfficiencyMetrics: (chunks) => ({
                 score: 88,
-                reasoning: "Very efficient",
-            }),
-        };
+                reasoning: "Very efficient"})};
 
         const { grader } = makeGrader({ programmaticGrader });
 
         const res = await grader.evaluateSession([], {
             sessionId: "PG1",
-            requirements: ["test"],
-        });
+            requirements: ["test"]});
 
         expect(res.programmaticResults).toBeDefined();
         expect(res.programmaticResults?.completionTime).toBe(123);
@@ -163,8 +169,7 @@ describe("Grader - advanced configuration", () => {
         const failingGrader: ProgrammaticGrader = {
             evaluateCompletionTime: () => { throw new Error("PG fail"); },
             checkRequiredActions: () => true,
-            calculateEfficiencyMetrics: () => ({ score: 90, reasoning: "" }),
-        };
+            calculateEfficiencyMetrics: () => ({ score: 90, reasoning: "" })};
 
         const { grader } = makeGrader({ programmaticGrader: failingGrader });
         const res = await grader.evaluateSession([], { sessionId: "PGFail" });
@@ -188,13 +193,11 @@ describe("Grader - prevSummary injection and prompt hygiene", () => {
 
         const chunks: Chunk[] = [
             [{ type: "text", text: "Step A" }],
-            [{ type: "text", text: "Step B" }],
-        ];
+            [{ type: "text", text: "Step B" }]];
 
         await grader.evaluateSession(chunks, {
             sessionId: "ABC",
-            platform: "web",
-        });
+            platform: "web"});
 
         const firstReq = calls[0].request;
         const firstSystem = firstReq.messages[0].content as string;
@@ -222,8 +225,7 @@ describe("Grader - content formatting, image limits, low detail, and text fallba
             [
                 { type: "image", data: img, mime: "image/png", cropInfo: "Area 1" },
                 { type: "image", data: img, mime: "image/png", cropInfo: "Area 2" }, // dropped
-            ],
-        ];
+            ]];
 
         await grader.evaluateSession(chunks, { sessionId: "IMG1" });
 
@@ -243,8 +245,7 @@ describe("Grader - content formatting, image limits, low detail, and text fallba
 
         const longText = "x".repeat(100);
         await grader.evaluateSession([[{ type: "text", text: longText }]], {
-            sessionId: "TRUNC",
-        });
+            sessionId: "TRUNC"});
 
         const req = calls[0].request;
         const textPart = (req.messages[1].content as any[]).find((p) => p.type === "text");
@@ -274,15 +275,13 @@ describe("Grader - JSON parsing fallbacks", () => {
                 outcomeAchievementReasoning: "r1",
                 processQualityReasoning: "r2",
                 efficiencyReasoning: "r3",
-                confidenceReasoning: "r4",
-            };
+                confidenceReasoning: "r4"};
             const content = "```json\n" + JSON.stringify(data) + "\n```";
             return Promise.resolve({ choices: [{ message: { content } }] });
         });
 
         const res = await grader.evaluateSession([[{ type: "text", text: "X" }]], {
-            sessionId: "JSON1",
-        });
+            sessionId: "JSON1"});
         expect(res.summary).toBe("Final OK");
         expect(res.observations).toContain("Bullet");
         expect(res.reasoning).toContain("Short rationale.");
@@ -312,15 +311,13 @@ describe("Grader - JSON parsing fallbacks", () => {
                 outcomeAchievementReasoning: "r1",
                 processQualityReasoning: "r2",
                 efficiencyReasoning: "r3",
-                confidenceReasoning: "r4",
-            };
+                confidenceReasoning: "r4"};
             const content = "Here we go:\n" + JSON.stringify(data) + "\nBye.";
             return Promise.resolve({ choices: [{ message: { content } }] });
         });
 
         const res = await grader.evaluateSession([[{ type: "text", text: "Y" }]], {
-            sessionId: "JSON2",
-        });
+            sessionId: "JSON2"});
         expect(res.score).toBe(57); // 0.5*50 + 0.3*60 + 0.2*70
         expect(res.summary).toBe("Final Balanced");
     });
@@ -339,13 +336,28 @@ describe("Grader - retries with exponential backoff", () => {
             }
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "OK after retry" }) } }],
-                });
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_y7zcvh",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "OK after retry" })
+            }
+        }]
+    } }]});
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_62o4az",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Final after retry",
                             observations: "• Good\n• Stable",
                             reasoning: "Recovered.",
@@ -357,17 +369,15 @@ describe("Grader - retries with exponential backoff", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         const t0 = Date.now();
         const res = await grader.evaluateSession([[{ type: "text", text: "foo" }]], {
-            sessionId: "RETRY1",
-        });
+            sessionId: "RETRY1"});
         const elapsed = Date.now() - t0;
 
         // Expect at least ~500ms backoff (first retry waits 500ms + jitter(0..250); we don't control jitter here)
@@ -387,13 +397,28 @@ describe("Grader - criteria updates affect deterministic score", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "C1" }) } }],
-                });
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_cjx96m",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "C1" })
+            }
+        }]
+    } }]});
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_e8yxl7",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Final",
                             observations: "• X\n• Y",
                             reasoning: "Y",
@@ -405,26 +430,22 @@ describe("Grader - criteria updates affect deterministic score", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         let res = await grader.evaluateSession([[{ type: "text", text: "A" }]], {
-            sessionId: "CRIT1",
-        });
+            sessionId: "CRIT1"});
         expect(res.score).toBe(50);
 
         grader.updateEvaluationCriteria({
             outcomeAchievement: { weight: 60 },
-            efficiency: { weight: 10 },
-        });
+            efficiency: { weight: 10 }});
 
         res = await grader.evaluateSession([[{ type: "text", text: "B" }]], {
-            sessionId: "CRIT2",
-        });
+            sessionId: "CRIT2"});
         expect(res.score).toBe(50); // components equal, still 50
     });
 
@@ -435,8 +456,7 @@ describe("Grader - criteria updates affect deterministic score", () => {
         grader.updateEvaluationCriteria({
             outcomeAchievement: { weight: 70 },
             processQuality: { weight: 30 },
-            efficiency: { weight: 30 },
-        });
+            efficiency: { weight: 30 }});
 
         const criteria = grader.getEvaluationCriteria();
         const sum = criteria.outcomeAchievement.weight +
@@ -459,16 +479,14 @@ describe("Grader - criteria updates affect deterministic score", () => {
             grader.updateEvaluationCriteria({
                 outcomeAchievement: { weight: -50 },
                 processQuality: { weight: 30 },
-                efficiency: { weight: 20 },
-            })
+                efficiency: { weight: 20 }})
         ).toThrow(/must be positive and finite/i);
 
         expect(() =>
             grader.updateEvaluationCriteria({
                 outcomeAchievement: { weight: NaN },
                 processQuality: { weight: 30 },
-                efficiency: { weight: 20 },
-            })
+                efficiency: { weight: 20 }})
         ).toThrow(/must be positive and finite/i);
     });
 });
@@ -476,8 +494,7 @@ describe("Grader - criteria updates affect deterministic score", () => {
 describe("Grader - deterministic configuration", () => {
     test("uses default seed when none provided", () => {
         const grader = new Grader({
-            apiKey: "test-key",
-        });
+            apiKey: "test-key"});
         // We can't directly access the private seed, but we can test the constructor doesn't throw
         expect(grader).toBeDefined();
     });
@@ -485,8 +502,7 @@ describe("Grader - deterministic configuration", () => {
     test("accepts custom seed", () => {
         const grader = new Grader({
             apiKey: "test-key",
-            seed: 123,
-        });
+            seed: 123});
         expect(grader).toBeDefined();
     });
 
@@ -494,15 +510,13 @@ describe("Grader - deterministic configuration", () => {
         // Test with non-integer seed (should be floored)
         const grader1 = new Grader({
             apiKey: "test-key",
-            seed: 42.7,
-        });
+            seed: 42.7});
         expect(grader1).toBeDefined();
 
         // Test with NaN seed (should use default)
         const grader2 = new Grader({
             apiKey: "test-key",
-            seed: NaN,
-        });
+            seed: NaN});
         expect(grader2).toBeDefined();
     });
 });
@@ -519,17 +533,35 @@ describe("Grader - guards and errors", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "OK" }) } }],
-                });
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_1xhz5z",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "OK" })
+            }
+        }]
+    } }]});
             }
             return Promise.resolve({
-                choices: [{ message: { content: "{ not json" } }],
-            });
+                choices: [{ message: {
+            content: null,
+            tool_calls: [{
+                id: "call_invalid",
+                type: "function",
+                function: {
+                    name: "evaluate_final",
+                    arguments: "{ not json"  // Invalid JSON to trigger parse error
+                }
+            }]
+        } }]});
         });
 
         await expect(
             grader.evaluateSession([[{ type: "text", text: "X" }]], { sessionId: "PARSE1" })
-        ).rejects.toThrow(/Expected object, received null/i);
+        ).rejects.toThrow(/Invalid JSON in function call arguments/i);
     });
 });
 
@@ -577,13 +609,29 @@ describe("Grader - typed error handling", () => {
             // Success on subsequent attempts (chunk + final)
             if (callCount === 2) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_lqdgu9",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_jrjald",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Success after retry",
                             observations: "• Retry worked\n• Connection stable",
                             reasoning: "Good",
@@ -595,11 +643,10 @@ describe("Grader - typed error handling", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         const startTime = Date.now();
@@ -668,13 +715,29 @@ describe("Grader - schema validation", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Valid chunk summary" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_f47m4i",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Valid chunk summary" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_ukvmt0",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Valid final summary",
                             observations: "• Line 1\n• Line 2\n• Line 3",
                             reasoning: "Valid reasoning",
@@ -686,11 +749,10 @@ describe("Grader - schema validation", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         const result = await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
@@ -710,13 +772,29 @@ describe("Grader - schema validation", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_o7l1bt",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_twl1is",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Summary",
                             observations: "Only one line", // Invalid: need 2-6 lines
                             reasoning: "Reasoning",
@@ -728,11 +806,10 @@ describe("Grader - schema validation", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         await expect(
@@ -747,13 +824,29 @@ describe("Grader - schema validation", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_ut5dpv",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_0lqhv3",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Summary",
                             observations: "• Line 1\n• Line 2\n• Line 3\n• Line 4\n• Line 5\n• Line 6\n• Line 7", // Invalid: too many lines
                             reasoning: "Reasoning",
@@ -765,11 +858,10 @@ describe("Grader - schema validation", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         await expect(
@@ -784,24 +876,39 @@ describe("Grader - schema validation", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_ilq9s9",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_79uwof",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Summary",
                             // Missing observations, reasoning, etc.
                             score: 80,
                             confidence: 90,
                             outcomeAchievement: 80,
                             processQuality: 75,
-                            efficiency: 70,
-                        }),
-                    },
-                }],
-            });
+                            efficiency: 70})
+            }
+        }]
+    }}]});
         });
 
         await expect(
@@ -824,8 +931,7 @@ describe("Grader - schema validation", () => {
             outcomeAchievementReasoning: "r1",
             processQualityReasoning: "r2",
             efficiencyReasoning: "r3",
-            confidenceReasoning: "r4",
-        };
+            confidenceReasoning: "r4"};
 
         (grader as any).client.chat.completions.create = mock((req: any) => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
@@ -852,9 +958,7 @@ describe("Grader - schema validation", () => {
                                 arguments: JSON.stringify(parsedContent)
                             }
                         }]
-                    },
-                }],
-            });
+                    }}]});
         });
 
         const result = await grader.evaluateSession([[{ type: "text", text: "Test" }]], {
@@ -874,29 +978,47 @@ describe("Grader - schema validation", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_qwdl7z",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
-                            summary: "Fallback summary",
-                            observations: "• Line 1\n• Line 2",
-                            reasoning: "Fallback reasoning",
-                            score: 75,
-                            confidence: 85,
-                            outcomeAchievement: 75,
-                            processQuality: 75,
-                            efficiency: 75,
-                            outcomeAchievementReasoning: "r1",
-                            processQualityReasoning: "r2",
-                            efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                        parsed: { invalid: "data" }, // Invalid parsed content
-                    },
-                }],
+                        content: null,
+                        tool_calls: [{
+                            id: "call_2yvd6b",
+                            type: "function",
+                            function: {
+                                name: "evaluate_final",
+                                arguments: JSON.stringify({
+                                    summary: "Fallback summary",
+                                    observations: "• Line 1\n• Line 2",
+                                    reasoning: "Fallback reasoning",
+                                    score: 75,
+                                    confidence: 85,
+                                    outcomeAchievement: 75,
+                                    processQuality: 75,
+                                    efficiency: 75,
+                                    outcomeAchievementReasoning: "r1",
+                                    processQualityReasoning: "r2",
+                                    efficiencyReasoning: "r3",
+                                    confidenceReasoning: "r4"
+                                })
+                            }
+                        }],
+                        parsed: { invalid: "data" } // Invalid parsed content to trigger fallback
+                    }
+                }]
             });
         });
 
@@ -923,13 +1045,29 @@ describe("Grader - security and sanitization", () => {
             if (!isFinal) {
                 capturedContent = req.messages[1].content; // Capture chunk content
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_lblaic",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Clean chunk" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_fwmr63",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Clean final",
                             observations: "• Clean line 1\n• Clean line 2",
                             reasoning: "Clean reasoning",
@@ -941,11 +1079,10 @@ describe("Grader - security and sanitization", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         const maliciousCropInfo = "Click area\x00\x01\x02<script>alert('xss')</script>\x7F\x9F";
@@ -985,13 +1122,29 @@ describe("Grader - security and sanitization", () => {
             if (!isFinal) {
                 capturedContent = req.messages[1].content; // Capture chunk content
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Clean chunk" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_y836tt",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Clean chunk" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_gonune",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Clean final",
                             observations: "• Clean line 1\n• Clean line 2",
                             reasoning: "Clean reasoning",
@@ -1003,11 +1156,10 @@ describe("Grader - security and sanitization", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         const maliciousText = "User action\x00\x01\x02javascript:alert('xss')\x7F\x9F";
@@ -1047,13 +1199,29 @@ describe("Grader - concurrency and rate limiting", () => {
             const isFinal = req.messages.some((m: any) => m.content.includes("FINAL AGGREGATION"));
             if (!isFinal) {
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk OK" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_puaxzk",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk OK" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_8jfl5c",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Session complete",
                             observations: "• Task completed\n• No issues found",
                             reasoning: "Good execution",
@@ -1065,11 +1233,10 @@ describe("Grader - concurrency and rate limiting", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         // Process multiple sessions concurrently
@@ -1161,14 +1328,30 @@ describe("Grader - concurrency and rate limiting", () => {
                     chunkProcessOrder.push(textPart.text);
                 }
                 return Promise.resolve({
-                    choices: [{ message: { content: JSON.stringify({ summary: `Summary for ${textPart.text}` }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_zj78qa",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: `Summary for ${textPart.text}` })
+            }
+        }]
+    } }]
                 });
             }
 
             return Promise.resolve({
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_jozib2",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Final summary",
                             observations: "• All chunks processed\n• Sequential order maintained",
                             reasoning: "Good",
@@ -1180,11 +1363,10 @@ describe("Grader - concurrency and rate limiting", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         // Create chunks that should be processed in order
@@ -1228,7 +1410,17 @@ describe("Grader - observability and metrics", () => {
                         completion_tokens: 25,
                         total_tokens: 175
                     },
-                    choices: [{ message: { content: JSON.stringify({ summary: "Chunk complete" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_c9ra57",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Chunk complete" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
@@ -1241,7 +1433,13 @@ describe("Grader - observability and metrics", () => {
                 },
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_tsdsqy",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Final evaluation",
                             observations: "• Task completed\n• Good performance",
                             reasoning: "Successful execution",
@@ -1253,11 +1451,10 @@ describe("Grader - observability and metrics", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         await grader.evaluateSession([[{ type: "text", text: "Test action" }]], {
@@ -1320,7 +1517,17 @@ describe("Grader - observability and metrics", () => {
                 return Promise.resolve({
                     id: "chatcmpl-success789",
                     usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
-                    choices: [{ message: { content: JSON.stringify({ summary: "Success after retry" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_ii4wue",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Success after retry" })
+            }
+        }]
+    } }]
                 });
             }
 
@@ -1330,7 +1537,13 @@ describe("Grader - observability and metrics", () => {
                 usage: { prompt_tokens: 120, completion_tokens: 80, total_tokens: 200 },
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_3d9bjx",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Final after retry",
                             observations: "• Retry worked\n• Connection stable",
                             reasoning: "Good recovery",
@@ -1342,11 +1555,10 @@ describe("Grader - observability and metrics", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         await grader.evaluateSession([[{ type: "text", text: "Retry test" }]], {
@@ -1421,14 +1633,30 @@ describe("Grader - observability and metrics", () => {
             if (!isFinal) {
                 return Promise.resolve({
                     id: "test123",
-                    choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_uw9a2r",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Test chunk" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 id: "test456",
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_vx488e",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Test final",
                             observations: "• Test line 1\n• Test line 2",
                             reasoning: "Test reasoning",
@@ -1440,11 +1668,10 @@ describe("Grader - observability and metrics", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         // Should not throw despite failing metrics hook
@@ -1468,14 +1695,30 @@ describe("Grader - observability and metrics", () => {
             if (!isFinal) {
                 return Promise.resolve({
                     id: "test123",
-                    choices: [{ message: { content: JSON.stringify({ summary: "Test chunk" }) } }]
+                    choices: [{ message: {
+        content: null,
+        tool_calls: [{
+            id: "call_mez65b",
+            type: "function",
+            function: {
+                name: "evaluate_chunk",
+                arguments: JSON.stringify({ summary: "Test chunk" })
+            }
+        }]
+    } }]
                 });
             }
             return Promise.resolve({
                 id: "test456",
                 choices: [{
                     message: {
-                        content: JSON.stringify({
+        content: null,
+        tool_calls: [{
+            id: "call_cfegno",
+            type: "function",
+            function: {
+                name: "evaluate_final",
+                arguments: JSON.stringify({
                             summary: "Test final",
                             observations: "• Test line 1\n• Test line 2",
                             reasoning: "Test reasoning",
@@ -1487,11 +1730,10 @@ describe("Grader - observability and metrics", () => {
                             outcomeAchievementReasoning: "r1",
                             processQualityReasoning: "r2",
                             efficiencyReasoning: "r3",
-                            confidenceReasoning: "r4",
-                        }),
-                    },
-                }],
-            });
+                            confidenceReasoning: "r4"})
+            }
+        }]
+    }}]});
         });
 
         // Should work fine without metrics hook
