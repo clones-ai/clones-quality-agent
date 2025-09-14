@@ -215,25 +215,34 @@ export class Grader {
 
     // Run programmatic graders, if provided
     if (this.programmaticGrader) {
+      finalResult.programmaticResults = {};
+
+      // Safely run each programmatic grader, allowing others to continue on failure
       try {
-        finalResult.programmaticResults = {};
         if (typeof this.programmaticGrader.evaluateCompletionTime === "function") {
           finalResult.programmaticResults.completionTime =
             this.programmaticGrader.evaluateCompletionTime(chunks);
         }
+      } catch (error) {
+        this.logger.error("Programmatic grader 'evaluateCompletionTime' failed", error as Error, { sessionId: meta.sessionId });
+      }
+
+      try {
         if (typeof this.programmaticGrader.checkRequiredActions === "function") {
           finalResult.programmaticResults.requiredActionsMet =
             this.programmaticGrader.checkRequiredActions(chunks, meta.requirements ?? []);
         }
+      } catch (error) {
+        this.logger.error("Programmatic grader 'checkRequiredActions' failed", error as Error, { sessionId: meta.sessionId });
+      }
+
+      try {
         if (typeof this.programmaticGrader.calculateEfficiencyMetrics === "function") {
           finalResult.programmaticResults.efficiencyMetrics =
             this.programmaticGrader.calculateEfficiencyMetrics(chunks);
         }
       } catch (error) {
-        this.logger.error("Programmatic grader failed", error as Error, {
-          sessionId: meta.sessionId,
-        });
-        // Do not throw; programmatic graders should not stop the main flow.
+        this.logger.error("Programmatic grader 'calculateEfficiencyMetrics' failed", error as Error, { sessionId: meta.sessionId });
       }
     }
 
@@ -343,8 +352,8 @@ export class Grader {
           responseId: result.id,
           systemFingerprint: result.system_fingerprint || undefined,
           usage: result.usage ? {
-            promptTokens: result.usage.prompt_tokens || 0,
-            completionTokens: result.usage.completion_tokens || 0,
+            promptTokens: result.usage?.prompt_tokens || 0,
+            completionTokens: result.usage?.completion_tokens || 0,
             totalTokens: result.usage?.total_tokens || 0
           } : undefined,
           timing: {
@@ -548,7 +557,7 @@ export class Grader {
   ): string {
     const choice = resp.choices?.[0];
     const msg = choice?.message;
-    
+
     // Try tool calls first (structured outputs)
     if (msg?.tool_calls?.[0]) {
       const toolCall = msg.tool_calls[0];
@@ -557,12 +566,12 @@ export class Grader {
       }
       return toolCall.function.arguments;
     }
-    
+
     // Fallback to raw content parsing for backward compatibility
     if (msg?.content) {
       return msg.content;
     }
-    
+
     throw new Error("No tool calls found in response.");
   }
 
@@ -584,7 +593,7 @@ export class Grader {
           });
         }
       }
-      
+
       this.logger.error("Failed to parse function call arguments.", e as Error, {
         argumentsLength: jsonString.length
       });

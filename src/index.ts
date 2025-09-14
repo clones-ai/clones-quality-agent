@@ -83,7 +83,7 @@ const { values } = parseArgs({
     },
     'evaluation-model': {
       type: 'string'
-    }
+    },
   },
   strict: true,
   allowPositionals: true
