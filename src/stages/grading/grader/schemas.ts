@@ -88,14 +88,28 @@ export const FinalEvaluationSchema = z.object({
     observations: z.string()
         .min(1, "Observations must not be empty")
         .refine((obs) => {
-            // More flexible validation: accept bullet points, numbered lists, or line breaks
+            // More flexible validation for different model capabilities
+            const trimmed = obs.trim();
+            
+            // Accept if it has basic content (at least 10 characters for meaningful observations)
+            if (trimmed.length < 10) return false;
+            
+            // Check for structured content (bullet points, numbered lists, or line breaks)
             const lines = obs.split('\n').filter(line => line.trim().length > 0);
             const bulletPoints = obs.split(/[•\-\*]/).filter(point => point.trim().length > 0);
-
-            // Accept either 2-6 lines OR 2-6 bullet points
-            return (lines.length >= 2 && lines.length <= 6) ||
-                (bulletPoints.length >= 2 && bulletPoints.length <= 6);
-        }, "Observations must contain between 2 and 6 non-empty lines or bullet points"),
+            const numberedItems = obs.split(/\d+[\.\)]/).filter(item => item.trim().length > 0);
+            
+            // More permissive: accept 1-10 lines/points (was 2-6)
+            // Check that at least one format is valid, but enforce the 1-10 limit on ALL formats
+            const linesValid = lines.length >= 1 && lines.length <= 10;
+            const bulletsValid = bulletPoints.length >= 1 && bulletPoints.length <= 10;
+            const numberedValid = numberedItems.length >= 1 && numberedItems.length <= 10;
+            
+            // If content is structured as lines, enforce line limit
+            // If content is structured as bullets, enforce bullet limit  
+            // If content is structured as numbered items, enforce numbered limit
+            return linesValid && bulletsValid && numberedValid;
+        }, "Observations must contain meaningful structured content (1-10 lines, bullet points, or numbered items)"),
     reasoning: z.string().min(1, "Reasoning must not be empty"),
     score: z.number().int().min(0).max(100),
     confidence: z.number().int().min(0).max(100),

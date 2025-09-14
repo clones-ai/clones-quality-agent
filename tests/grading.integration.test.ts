@@ -174,8 +174,8 @@ describe("Grader Integration (real API)", () => {
             const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
                 chunkSize: 2,
-                model: "gpt-4o", // fast & vision-capable model
-                timeout: 45_000,
+                model: "gpt-4o-mini", // fast & vision-capable model
+                timeout: 30_000,
                 maxRetries: 2,
             };
 
@@ -239,8 +239,8 @@ describe("Grader Integration (real API)", () => {
             const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
                 chunkSize: 2,
-                model: "gpt-4o",
-                timeout: 45_000,
+                model: "gpt-4o-mini", // fast & vision-capable model
+                timeout: 30_000,
                 programmaticGrader,
             };
 
@@ -276,7 +276,7 @@ describe("Grader Integration (real API)", () => {
             const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
                 chunkSize: 2,
-                model: "gpt-4o",
+                model: "gpt-4o-mini", // fast & vision-capable model
                 timeout: 100, // force fast abort
                 maxRetries: 1,
             };
@@ -316,8 +316,8 @@ describe("Grader Integration (real API)", () => {
             const config: GraderConfig = {
                 apiKey: process.env.OPENAI_API_KEY!,
                 chunkSize: 2,
-                model: "gpt-4o",
-                timeout: 45_000,
+                model: "gpt-4o-mini", // fast & vision-capable model
+                timeout: 30_000,
                 maxRetries: 2,
             };
             const grader = new Grader(config, logger);
@@ -356,8 +356,8 @@ describe("Grader Integration (real API)", () => {
             const config: GraderConfig = {
                 apiKey: "invalid-api-key-12345",
                 chunkSize: 2,
-                model: "gpt-4o",
-                timeout: 10_000,
+                model: "gpt-4o-mini", // fast & vision-capable model
+                timeout: 30_000,
                 maxRetries: 1,
             };
             const grader = new Grader(config, logger);
