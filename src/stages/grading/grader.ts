@@ -534,6 +534,8 @@ export class Grader {
             },
           },
         ],
+      }, {
+        signal: controller.signal,
       });
 
       const argumentsJson = this.extractFunctionCallArguments(response);

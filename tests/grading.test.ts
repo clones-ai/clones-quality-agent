@@ -26,6 +26,7 @@ function mock(fn: (...args: any[]) => any) {
 type CreateCall = {
     args: any[];
     request: any;
+    isFinal: boolean;
 };
 
 function makeGrader(overrides: Partial<GraderConfig> = {}) {
@@ -37,7 +38,7 @@ function makeGrader(overrides: Partial<GraderConfig> = {}) {
     const calls: CreateCall[] = [];
     const create = mock((req: any) => {
         const isFinal = req.messages.some((m: any) => m.role === "system" && m.content.includes("FINAL AGGREGATION"));
-        calls.push({ args: [req], request: req });
+        calls.push({ args: [req], request: req, isFinal });
 
         if (!isFinal) {
             const data = { summary: "User opened settings" };
@@ -150,8 +151,8 @@ describe("Grader - advanced configuration", () => {
 
         await grader.evaluateSession([[{ type: "text", text: "A" }]] as Chunk[], { sessionId: "M1" });
 
-        const chunkCall = calls.find(c => c.request.messages.some((m: any) => m.content.includes("CHUNK EVALUATION")));
-        const finalCall = calls.find(c => c.request.messages.some((m: any) => m.content.includes("FINAL AGGREGATION")));
+        const chunkCall = calls.find(c => !c.isFinal);
+        const finalCall = calls.find(c => c.isFinal);
 
         expect(chunkCall?.request.model).toBe("chunk-model");
         expect(finalCall?.request.model).toBe("final-model");
@@ -1588,8 +1589,10 @@ describe("Grader - observability and metrics", () => {
         expect(chunkMetrics.outcome).toBe("success");
 
         // Check final metrics
-        const finalMetrics = capturedMetrics.find(m => m.context.isFinal);
-        expect(finalMetrics).toBeDefined();
+        const finalMetricsEntries = capturedMetrics.filter(m => m.context.isFinal);
+        expect(finalMetricsEntries).toHaveLength(1);
+        const finalMetrics = finalMetricsEntries[0];
+
         expect(finalMetrics.responseId).toBe("chatcmpl-final456");
         expect(finalMetrics.systemFingerprint).toBe("fp_final_v1");
         expect(finalMetrics.usage.totalTokens).toBe(300);
