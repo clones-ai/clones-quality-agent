@@ -96,19 +96,22 @@ export const FinalEvaluationSchema = z.object({
             
             // Check for structured content (bullet points, numbered lists, or line breaks)
             const lines = obs.split('\n').filter(line => line.trim().length > 0);
-            const bulletPoints = obs.split(/[•\-\*]/).filter(point => point.trim().length > 0);
-            const numberedItems = obs.split(/\d+[\.\)]/).filter(item => item.trim().length > 0);
             
-            // More permissive: accept 1-10 lines/points (was 2-6)
-            // Check that at least one format is valid, but enforce the 1-10 limit on ALL formats
+            // Only count as bullet points if lines actually start with bullet characters
+            const hasBulletPoints = lines.some(line => /^[\s]*[•\-\*]/.test(line));
+            const bulletCount = hasBulletPoints ? lines.filter(line => /^[\s]*[•\-\*]/.test(line)).length : 0;
+            
+            // Only count as numbered items if lines actually start with numbers
+            const hasNumberedItems = lines.some(line => /^[\s]*\d+[\.\)]/.test(line));
+            const numberedCount = hasNumberedItems ? lines.filter(line => /^[\s]*\d+[\.\)]/.test(line)).length : 0;
+            
+            // Check validity for each format
             const linesValid = lines.length >= 1 && lines.length <= 10;
-            const bulletsValid = bulletPoints.length >= 1 && bulletPoints.length <= 10;
-            const numberedValid = numberedItems.length >= 1 && numberedItems.length <= 10;
+            const bulletsValid = hasBulletPoints && bulletCount >= 1 && bulletCount <= 10;
+            const numberedValid = hasNumberedItems && numberedCount >= 1 && numberedCount <= 10;
             
-            // If content is structured as lines, enforce line limit
-            // If content is structured as bullets, enforce bullet limit  
-            // If content is structured as numbered items, enforce numbered limit
-            return linesValid && bulletsValid && numberedValid;
+            // Accept if ANY format is valid (lines, bullets, or numbered items)
+            return linesValid || bulletsValid || numberedValid;
         }, "Observations must contain meaningful structured content (1-10 lines, bullet points, or numbered items)"),
     reasoning: z.string().min(1, "Reasoning must not be empty"),
     score: z.number().int().min(0).max(100),
