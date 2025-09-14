@@ -29,7 +29,7 @@ import {
   ProgrammaticGrader,
   RequestMetrics,
 } from "./grader/types";
-import { clamp, classifyError, sanitizeUserInput, sleep } from "./grader/utils";
+import { clamp, classifyError, sanitizeUserInput, sleep, safeExtractJson } from "./grader/utils";
 import packageJson from "../../../package.json";
 
 
@@ -549,16 +549,21 @@ export class Grader {
     const choice = resp.choices?.[0];
     const msg = choice?.message;
     
-    if (!msg?.tool_calls?.[0]) {
-      throw new Error("No tool calls found in response.");
+    // Try tool calls first (structured outputs)
+    if (msg?.tool_calls?.[0]) {
+      const toolCall = msg.tool_calls[0];
+      if (toolCall.type !== "function" || !toolCall.function?.arguments) {
+        throw new Error("Invalid tool call structure.");
+      }
+      return toolCall.function.arguments;
     }
-
-    const toolCall = msg.tool_calls[0];
-    if (toolCall.type !== "function" || !toolCall.function?.arguments) {
-      throw new Error("Invalid tool call structure.");
+    
+    // Fallback to raw content parsing for backward compatibility
+    if (msg?.content) {
+      return msg.content;
     }
-
-    return toolCall.function.arguments;
+    
+    throw new Error("No tool calls found in response.");
   }
 
   /* ----- Parsing / Scoring / Prompt / Content ----- */
@@ -567,6 +572,19 @@ export class Grader {
     try {
       return JSON.parse(jsonString);
     } catch (e) {
+      // Try fallback JSON extraction for raw content (fenced blocks, balanced braces)
+      const extracted = safeExtractJson(jsonString);
+      if (extracted) {
+        try {
+          return JSON.parse(extracted);
+        } catch (extractedError) {
+          this.logger.error("Failed to parse extracted JSON.", extractedError as Error, {
+            originalLength: jsonString.length,
+            extractedLength: extracted.length
+          });
+        }
+      }
+      
       this.logger.error("Failed to parse function call arguments.", e as Error, {
         argumentsLength: jsonString.length
       });
