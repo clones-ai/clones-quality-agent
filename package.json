@@ -1,6 +1,6 @@
 {
   "name": "clones-quality-agent",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "scripts": {
     "test": "bun test",
     "test:grading": "bun run scripts/test-grading.ts",
