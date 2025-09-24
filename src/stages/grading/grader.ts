@@ -255,7 +255,6 @@ export class Grader {
 
         const userContent = this.formatMessageContent(chunk);
 
-
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: "system", content: systemPrompt },
             { role: "user", content: userContent },
@@ -387,7 +386,7 @@ export class Grader {
                 this.logger.error("Programmatic grader 'evaluateCompletionTime' failed", error as Error, { sessionId: meta.sessionId });
             }
 
-            // calculateEfficiencyMetrics  
+            // calculateEfficiencyMetrics
             try {
                 if (typeof this.programmaticGrader.calculateEfficiencyMetrics === "function") {
                     programmaticResults.efficiencyMetrics = this.programmaticGrader.calculateEfficiencyMetrics(chunks);
@@ -772,7 +771,7 @@ export class Grader {
 
         // Bonus for detailed observations (structured content)
         const structuredLines = observations.split('\n').filter(line =>
-            line.trim().match(/^[-•\d+\.]/)).length;
+            line.trim().match(/^([-•+*]|\d+\.)/)).length;
         evidenceCount += structuredLines;
 
         return evidenceCount;
