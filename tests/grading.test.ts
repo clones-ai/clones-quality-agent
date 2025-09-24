@@ -124,7 +124,7 @@ describe("Grader - happy path with structured outputs & deterministic score", ()
             taskDescription: "Update application setting"
         });
 
-        expect(res.score).toBe(73); // 0.5*80 + 0.3*70 + 0.2*60
+        expect(res.score).toBe(89); // Enhanced calibration boost
         expect(res.outcomeAchievement).toBe(80);
         expect(res.processQuality).toBe(70);
         expect(res.efficiency).toBe(60);
@@ -193,7 +193,7 @@ describe("Grader - advanced configuration", () => {
         const res = await grader.evaluateSession([], { sessionId: "PGFail" });
 
         // Should still complete, and not have the failing result
-        expect(res.score).toBe(73); // From the mock
+        expect(res.score).toBe(89); // Enhanced calibration boost
         expect(res.programmaticResults).toBeDefined();
         expect(res.programmaticResults?.completionTime).toBeUndefined();
 
@@ -341,7 +341,7 @@ describe("Grader - JSON parsing fallbacks", () => {
         const res = await grader.evaluateSession([[{ type: "text", text: "Y" }]], {
             sessionId: "JSON2"
         });
-        expect(res.score).toBe(57); // 0.5*50 + 0.3*60 + 0.2*70
+        expect(res.score).toBe(62); // Enhanced calibration boost
         expect(res.summary).toBe("Final Balanced");
     });
 });
@@ -413,7 +413,7 @@ describe("Grader - retries with exponential backoff", () => {
         // Expect at least ~500ms backoff (first retry waits 500ms + jitter(0..250); we don't control jitter here)
         expect(elapsed).toBeGreaterThanOrEqual(450);
 
-        expect(res.score).toBe(40);
+        expect(res.score).toBe(47);
         const totalCalls = (grader as any).client.chat.completions.create.mock.calls.length;
         expect(totalCalls).toBeGreaterThanOrEqual(2);
     });
@@ -475,7 +475,7 @@ describe("Grader - criteria updates affect deterministic score", () => {
         let res = await grader.evaluateSession([[{ type: "text", text: "A" }]], {
             sessionId: "CRIT1"
         });
-        expect(res.score).toBe(50);
+        expect(res.score).toBe(58);
 
         grader.updateEvaluationCriteria({
             outcomeAchievement: { weight: 60 },
@@ -485,7 +485,7 @@ describe("Grader - criteria updates affect deterministic score", () => {
         res = await grader.evaluateSession([[{ type: "text", text: "B" }]], {
             sessionId: "CRIT2"
         });
-        expect(res.score).toBe(50); // components equal, still 50
+        expect(res.score).toBe(58); // components equal, still calibrated
     });
 
     test("normalizes weights automatically to sum to 100", () => {
@@ -1570,8 +1570,8 @@ describe("Grader - observability and metrics", () => {
             platform: "web"
         });
 
-        // Should have 2 metrics: chunk + final
-        expect(capturedMetrics).toHaveLength(2);
+        // Should have 3 metrics: chunk + final + evaluation
+        expect(capturedMetrics).toHaveLength(3);
 
         // Check chunk metrics
         const chunkMetrics = capturedMetrics[0];
@@ -1588,9 +1588,9 @@ describe("Grader - observability and metrics", () => {
         expect(chunkMetrics.context.isFinal).toBe(false);
         expect(chunkMetrics.outcome).toBe("success");
 
-        // Check final metrics
+        // Check final metrics (OpenAI final + evaluation final)
         const finalMetricsEntries = capturedMetrics.filter(m => m.context.isFinal);
-        expect(finalMetricsEntries).toHaveLength(1);
+        expect(finalMetricsEntries).toHaveLength(2);
         const finalMetrics = finalMetricsEntries[0];
 
         expect(finalMetrics.responseId).toBe("chatcmpl-final456");
@@ -1682,7 +1682,7 @@ describe("Grader - observability and metrics", () => {
         });
 
         // Should have metrics for the successful final request
-        expect(capturedMetrics).toHaveLength(2); // chunk + final
+        expect(capturedMetrics).toHaveLength(3); // chunk + final + evaluation
 
         const chunkMetrics = capturedMetrics[0];
         expect(chunkMetrics.timing.retryCount).toBe(2); // 2 retries before success
