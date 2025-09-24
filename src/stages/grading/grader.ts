@@ -789,11 +789,14 @@ export class Grader {
         const header =
             `You are a computer-use trajectory evaluator. ` +
             `The user will send a sequence of screenshots and actions, and you must evaluate the user's performance on the following task:` +
-            `  Task ID: ${meta.id} ` +
-            `  Title: ${meta.quest?.title} ` +
-            `  App: ${meta.quest?.app} ` +
-            `  User Request: ${meta.quest?.content} ` +
-            `  Objectives: ${meta.quest?.objectives?.map(objective => `- ${objective}`).join('\n')}` +
+            `  Task ID: ${meta.id || 'N/A'} ` +
+            `  Title: ${meta.quest?.title || 'N/A'} ` +
+            `  App: ${meta.quest?.app || 'N/A'} ` +
+            `  User Request: ${meta.quest?.content || 'N/A'} ` +
+            `  Objectives: ${Array.isArray(meta.quest?.objectives) && meta.quest.objectives.length > 0
+                ? meta.quest.objectives.map(objective => `- ${objective}`).join('\n')
+                : 'N/A'
+            }` +
             `\n<app> tags represents the main application name. ` +
             `\nCRITICAL: You must ANALYZE THE SCREENSHOTS to identify specific UI elements, buttons, text, pages, and content. ` +
             `Your primary job is to document SPECIFIC ACTIONS taken by the user by examining what is visible in each screenshot. ` +
