@@ -1,13 +1,13 @@
 {
     "DEFAULT_CRITERIA": {
         "outcomeAchievement": {
-            "weight": 50
+            "weight": 60
         },
         "processQuality": {
             "weight": 30
         },
         "efficiency": {
-            "weight": 20
+            "weight": 10
         }
     }
 }

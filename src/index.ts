@@ -177,7 +177,9 @@ async function gradeSftFile(
     sessionId: session,
     platform: format === 'desktop' ? 'desktop' : 'web',
     taskDescription:
-      metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined
+      metaJson?.quest?.title ?? metaJson?.title ?? metaJson?.description ?? undefined,
+    quest: metaJson?.quest ?? undefined,
+    id: metaJson?.id ?? undefined,
   };
   const chunks = sftToChunks(sftMessages, chunkSize);
   const result = await grader.evaluateSession(chunks, meta);

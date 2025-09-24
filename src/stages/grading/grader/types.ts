@@ -110,6 +110,14 @@ export interface MetricsHook {
 
 export interface MetaData {
     sessionId: string;
+    id?: string;
+    quest?: {
+        title: string;
+        app: string;
+        content: string;
+        objectives?: string[];
+    };
+
     taskDescription?: string;
     platform?: "web" | "desktop" | "other";
     /** Optional list of requirements for the `checkRequiredActions` programmatic grader. */
