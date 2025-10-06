@@ -91,7 +91,18 @@ const { values } = parseArgs({
 
 // Convert an array of SFT messages into Grader chunks of size N
 function sftToChunks(messages: any[], chunkSize: number): Chunk[] {
+  console.log(`[SFT-DEBUG] Processing ${messages.length} SFT messages`);
+  
   const items = (messages ?? []).map((m: any) => {
+    // Check for app_focus events in SFT data
+    if (m && m.type === 'app_focus') {
+      console.log(`[SFT-DEBUG] Found app_focus event: ${JSON.stringify(m)}`);
+      return {
+        type: 'app_focus',
+        timestamp: m.timestamp,
+        data: m.data
+      };
+    }
     // Common cases: { role, content }, or strings
     if (typeof m === 'string') return { type: 'text', text: String(m) };
     if (m && typeof m.content === 'string') return { type: 'text', text: m.content };
