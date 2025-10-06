@@ -791,13 +791,16 @@ export class Grader {
             `The user will send a sequence of screenshots and actions, and you must evaluate the user's performance on the following task:` +
             `  Task ID: ${meta.id || 'N/A'} ` +
             `  Title: ${meta.quest?.title || 'N/A'} ` +
-            `  App: ${meta.quest?.app || 'N/A'} ` +
+            `  Expected App: ${meta.quest?.app || 'N/A'} ` +
             `  User Request: ${meta.quest?.content || 'N/A'} ` +
             `  Objectives: ${Array.isArray(meta.quest?.objectives) && meta.quest.objectives.length > 0
                 ? meta.quest.objectives.map(objective => `- ${objective}`).join('\n')
                 : 'N/A'
             }` +
             `\n<app> tags represents the main application name. ` +
+            `\nCRITICAL APPLICATION VALIDATION: You must verify that the user used the CORRECT APPLICATION (${meta.quest?.app || 'specified app'}) for this task. ` +
+            `Look for app_focus events in the user actions to track which applications were actually used during the session. ` +
+            `If the user spent significant time in wrong applications or never used the target app, this should severely impact the outcome score. ` +
             `\nCRITICAL: You must ANALYZE THE SCREENSHOTS to identify specific UI elements, buttons, text, pages, and content. ` +
             `Your primary job is to document SPECIFIC ACTIONS taken by the user by examining what is visible in each screenshot. ` +
             `Look at the screenshots to identify: website or application names, page titles, button text, section names, article headlines, form fields, etc. ` +
@@ -814,9 +817,14 @@ export class Grader {
 
         const rubric =
             `Use the following rubric for scoring:\n` +
-            `- Outcome Achievement: Score near 100 for perfect task completion. Score near 0 if the core goal was missed entirely.\n` +
-            `- Process Quality: Score near 100 for a flawless, optimal path. Reduce the score for errors, confusion, or significant deviations.\n` +
-            `- Efficiency: Score near 100 for the most direct path with no wasted actions. Reduce the score for unnecessary steps or long hesitations.\n\n` +
+            `- Outcome Achievement: Score near 100 for perfect task completion IN THE CORRECT APPLICATION. Score near 0 if the core goal was missed entirely OR if the wrong application was used extensively.\n` +
+            `- Process Quality: Score near 100 for a flawless, optimal path IN THE CORRECT APPLICATION. Reduce the score for errors, confusion, significant deviations, or incorrect app usage.\n` +
+            `- Efficiency: Score near 100 for the most direct path with no wasted actions IN THE CORRECT APPLICATION. Reduce the score for unnecessary steps, long hesitations, or time spent in wrong applications.\n\n` +
+            `Application Usage Validation:\n` +
+            `- If user spent >30% of time in wrong applications, cap outcome achievement at 50\n` +
+            `- If user never used the target application (${meta.quest?.app || 'specified app'}), outcome should be <30\n` +
+            `- Frequent app switching without purpose should reduce process quality\n` +
+            `- Time spent in irrelevant apps should significantly impact efficiency\n\n` +
             `Efficiency guidance:\n` +
             `- Do NOT double-count repeated minor mistakes.\n` +
             `- Minor extra clicks/scrolls incur at most a small penalty.\n` +
@@ -863,6 +871,12 @@ export class Grader {
         const guidelines =
             isFinal
                 ? `CRITICAL REQUIREMENT: You must provide a justification for EACH of the four component scores (outcome, process, efficiency, confidence) in their corresponding '...Reasoning' field. This is a non-negotiable system rule. If you lack sufficient information for a score, you MUST explicitly state that in its reasoning field (e.g., "Insufficient data to assess efficiency"). OMITTING ANY REASONING FIELD WILL CAUSE A CATASTROPHIC SYSTEM FAILURE. All fields are mandatory.\n\n` +
+                `APPLICATION USAGE ANALYSIS: You MUST analyze app_focus events to validate correct application usage:\n` +
+                `• Track which applications were focused during the session\n` +
+                `• Calculate time spent in target app (${meta.quest?.app || 'specified app'}) vs other apps\n` +
+                `• Identify periods of irrelevant app usage or excessive context switching\n` +
+                `• Factor app usage accuracy into outcome, process, and efficiency scores\n` +
+                `• Mention app usage validation explicitly in your reasoning fields\n\n` +
                 `SUMMARY FORMAT: Write a detailed bullet-point summary by ANALYZING THE SCREENSHOTS to identify what was actually clicked/accessed:\n` +
                 `• Opened the [Website Name] website\n` +
                 `• Clicked on "[Button Text]" button/section\n` +
@@ -870,6 +884,7 @@ export class Grader {
                 `• Typed "[specific text]" in [field name]\n` +
                 `• Clicked on "[Article Title]" or "[Link Text]"\n` +
                 `• Scrolled through [specific content area]\n` +
+                `• Focused on [Application Name] app (from app_focus events)\n` +
                 `EXAMINE each screenshot to identify visible text, buttons, page titles, and UI elements. Do NOT just describe coordinate clicks.\n\n` +
                 `CONFIDENCE REALISM: Confidence must scale with quantity/quality of cited evidence from the evidence ledger. High confidence (>80) requires multiple specific citations and detailed observations. Sparse evidence or contradictory findings should lower confidence accordingly.\n\n` +
                 `EVIDENCE RULES:\n` +
@@ -882,6 +897,9 @@ export class Grader {
                 `• User typed "[exact text]" in [field name]\n` +
                 `• User navigated to [specific page title]\n` +
                 `• User clicked on "[Article Title]" or "[Link Text]"\n` +
+                `• User focused on [Application Name] app (from app_focus events)\n` +
+                `APPLICATION TRACKING: Track app_focus events in this chunk to identify which applications were used.\n` +
+                `If the user focused on apps other than the target app (${meta.quest?.app || 'specified app'}), note this as it may impact scoring.\n` +
                 `REQUIRED: If there is a previous summary, START by restating the key progress from previous chunks, then ADD what happened in this chunk.\n` +
                 `LOOK AT the screenshots to read visible text, identify clickable elements, and determine context. Never just describe coordinates.`;
 

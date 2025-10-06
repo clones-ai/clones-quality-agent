@@ -51,7 +51,7 @@ export interface Message {
 }
 
 export interface ProcessedEvent {
-    type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'mousedrag' | 'mousewheel' | 'frame' | 'quest' | 'hint' | 'mouseclick' | 'type' | 'hotkey' | 'dense_caption' | 'state_transition' | 'structured_data' | 'reasoning';
+    type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'mousedrag' | 'mousewheel' | 'frame' | 'quest' | 'hint' | 'mouseclick' | 'type' | 'hotkey' | 'dense_caption' | 'state_transition' | 'structured_data' | 'reasoning' | 'app_focus';
     timestamp: number;
     data: {
         delta?: number;
@@ -67,6 +67,13 @@ export interface ProcessedEvent {
             time: number;  // relative ms from start of drag
             x: number;
             y: number;
+        }>;
+        focused_app?: string;
+        available_apps?: string[];
+        all_windows?: Array<{
+            name: string;
+            role?: string;
+            children?: any[];
         }>;
     };
 }
