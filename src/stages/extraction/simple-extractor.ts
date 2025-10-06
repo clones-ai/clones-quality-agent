@@ -35,6 +35,15 @@ interface InputEvent {
     axis?: string;
     value?: number;
     output?: string;
+    // AXTree data structure
+    data?: {
+      focused_app?: {
+        name?: string;
+      };
+      tree?: Array<{
+        name: string;
+      }>;
+    };
   };
   time: number;
 }
@@ -428,6 +437,30 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
               type: 'mousewheel',
               timestamp: time,
               data: { delta: event.data.delta }
+            });
+          }
+          break;
+        }
+
+        case 'axtree_interaction': {
+          flushText();
+          
+          // Extract focused app and complete window hierarchy from AXTree data
+          const axData = event.data?.data;
+          if (axData) {
+            const focusedApp = axData.focused_app?.name;
+            const availableApps = axData.tree?.map((app: any) => app.name) || [];
+            const allWindows = axData.tree || [];
+            
+            // Always capture app focus events to build timeline, even if no focused app
+            processedEvents.push({
+              type: 'app_focus',
+              timestamp: time,
+              data: { 
+                focused_app: focusedApp || 'Unknown',
+                available_apps: availableApps,
+                all_windows: allWindows
+              }
             });
           }
           break;

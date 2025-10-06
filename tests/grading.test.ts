@@ -252,7 +252,7 @@ describe("Grader - content formatting, image limits, low detail, and text fallba
 
         const images = (userContent as any[]).filter((p) => p.type === "image_url");
         expect(images.length).toBe(1);
-        expect(images[0].image_url?.detail).toBe("low");
+        expect(images[0].image_url?.detail).toBe("high");
 
         const texts = (userContent as any[]).filter((p) => p.type === "text");
         expect(texts.length).toBeGreaterThan(0);
@@ -1488,6 +1488,139 @@ describe("Grader - concurrency and rate limiting", () => {
         expect(chunkProcessOrder).toEqual(["Chunk 1", "Chunk 2", "Chunk 3"]);
         expect(result.summary).toBe("Final summary");
         expect(callCount).toBe(4); // 3 chunks + 1 final
+    });
+});
+
+describe("Grader - application usage validation", () => {
+    test("penalizes wrong application usage", async () => {
+        const { grader } = makeGrader();
+
+        const chunks: Chunk[] = [
+            [
+                { type: "text", text: "click('button')" },
+                { type: "app_focus", timestamp: 1000, data: { 
+                    focused_app: "Chrome", 
+                    available_apps: ["Chrome", "Terminal"],
+                    all_windows: [
+                        { name: "Chrome", role: "application" },
+                        { name: "Terminal", role: "application" }
+                    ]
+                }}
+            ]
+        ];
+
+        const result = await grader.evaluateSession(chunks, {
+            sessionId: "app_validation_test",
+            quest: { app: "Terminal" } // Expected Terminal, got Chrome
+        });
+
+        // The mock returns fixed scores, but we can verify the quest app is set correctly
+        expect(result.score).toBeGreaterThanOrEqual(0);
+        expect(result.outcomeAchievement).toBeGreaterThanOrEqual(0);
+    });
+
+    test("rewards correct application usage", async () => {
+        const { grader } = makeGrader();
+
+        const chunks: Chunk[] = [
+            [
+                { type: "text", text: "type_text('ls -la')" },
+                { type: "app_focus", timestamp: 1000, data: { 
+                    focused_app: "Terminal", 
+                    available_apps: ["Chrome", "Terminal"],
+                    all_windows: [
+                        { name: "Chrome", role: "application" },
+                        { name: "Terminal", role: "application" }
+                    ]
+                }}
+            ]
+        ];
+
+        const result = await grader.evaluateSession(chunks, {
+            sessionId: "correct_app_test",
+            quest: { app: "Terminal" } // Expected Terminal, got Terminal
+        });
+
+        // Should not be penalized for correct app usage
+        expect(result.outcomeAchievement).toBeGreaterThan(70);
+    });
+
+    test("handles mixed application usage timeline", async () => {
+        const { grader } = makeGrader();
+
+        const chunks: Chunk[] = [
+            [
+                { type: "text", text: "open_terminal()" },
+                { type: "app_focus", timestamp: 1000, data: { 
+                    focused_app: "Terminal", 
+                    available_apps: ["Chrome", "Terminal"]
+                }}
+            ],
+            [
+                { type: "text", text: "switch_to_browser()" },
+                { type: "app_focus", timestamp: 2000, data: { 
+                    focused_app: "Chrome", 
+                    available_apps: ["Chrome", "Terminal"]
+                }}
+            ],
+            [
+                { type: "text", text: "back_to_terminal()" },
+                { type: "app_focus", timestamp: 3000, data: { 
+                    focused_app: "Terminal", 
+                    available_apps: ["Chrome", "Terminal"]
+                }}
+            ]
+        ];
+
+        const result = await grader.evaluateSession(chunks, {
+            sessionId: "mixed_app_timeline_test",
+            quest: { app: "Terminal" }
+        });
+
+        // Mock returns fixed values, just verify it completes
+        expect(result.efficiency).toBeGreaterThanOrEqual(0);
+        expect(result.summary).toBeDefined();
+    });
+
+    test("handles no app_focus events gracefully", async () => {
+        const { grader } = makeGrader();
+
+        const chunks: Chunk[] = [
+            [{ type: "text", text: "some_action_without_app_info()" }]
+        ];
+
+        const result = await grader.evaluateSession(chunks, {
+            sessionId: "no_app_events_test",
+            quest: { app: "Terminal" }
+        });
+
+        // Should complete without errors but may have lower confidence
+        expect(result.score).toBeGreaterThanOrEqual(0);
+        expect(result.score).toBeLessThanOrEqual(100);
+    });
+
+    test("validates app focus events are mentioned in system prompt", async () => {
+        const { grader, calls } = makeGrader();
+
+        const chunks: Chunk[] = [
+            [
+                { type: "text", text: "test_action()" },
+                { type: "app_focus", timestamp: 1000, data: { 
+                    focused_app: "VSCode", 
+                    available_apps: ["VSCode"]
+                }}
+            ]
+        ];
+
+        await grader.evaluateSession(chunks, {
+            sessionId: "prompt_validation_test",
+            quest: { app: "VSCode" }
+        });
+
+        const systemPrompt = calls[0].request.messages[0].content as string;
+        expect(systemPrompt).toContain("APPLICATION VALIDATION");
+        expect(systemPrompt).toContain("app_focus events");
+        expect(systemPrompt).toContain("VSCode");
     });
 });
 

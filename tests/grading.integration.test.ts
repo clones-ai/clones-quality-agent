@@ -59,6 +59,17 @@ const sftActions = [
     "wait_for_results()",
 ];
 
+/** Sample actions with app focus events for testing application validation. */
+const sftActionsWithApps = [
+    'app_focus({"focused_app": "Terminal", "available_apps": ["Terminal", "Chrome"]})',
+    'type_text("ls -la")',
+    'execute_command()',
+    'app_focus({"focused_app": "Chrome", "available_apps": ["Terminal", "Chrome"]})', // Wrong app
+    'click_element("search_box")',
+    'app_focus({"focused_app": "Terminal", "available_apps": ["Terminal", "Chrome"]})', // Back to correct app
+    'type_text("cd /home")',
+];
+
 const meta: MetaData = {
     sessionId: "integration-test-001",
     platform: "web",
@@ -379,5 +390,140 @@ describe("Grader Integration (real API)", () => {
             console.log("✅ Invalid API key handled with throw (as expected)");
         },
         30_000
+    );
+
+    it(
+        "validates application usage in real API scenario",
+        async () => {
+            if (!process.env.OPENAI_API_KEY) {
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
+                return;
+            }
+
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
+                apiKey: process.env.OPENAI_API_KEY!,
+                chunkSize: 3,
+                model: "gpt-4o-mini",
+                timeout: 30_000,
+                maxRetries: 2,
+            };
+
+            const grader = new Grader(config, logger);
+            
+            // Convert app focus actions to proper chunks with app_focus events
+            const chunks: Chunk[] = [];
+            for (let i = 0; i < sftActionsWithApps.length; i += 3) {
+                const slice = sftActionsWithApps.slice(i, i + 3);
+                const chunkItems = slice.map((action) => {
+                    if (action.startsWith('app_focus(')) {
+                        // Parse app focus data and create app_focus event
+                        const jsonStr = action.match(/app_focus\((.*)\)/)?.[1];
+                        const appData = jsonStr ? JSON.parse(jsonStr) : {};
+                        return {
+                            type: "app_focus" as const,
+                            timestamp: Date.now(),
+                            data: {
+                                focused_app: appData.focused_app,
+                                available_apps: appData.available_apps,
+                                all_windows: appData.available_apps?.map((app: string) => ({
+                                    name: app,
+                                    role: "application"
+                                })) || []
+                            }
+                        };
+                    } else {
+                        return { type: "text" as const, text: action };
+                    }
+                });
+                chunks.push(chunkItems);
+            }
+
+            const appValidationMeta: MetaData = {
+                sessionId: "app-validation-integration-test",
+                platform: "desktop",
+                taskDescription: "Execute terminal commands in Terminal application",
+                quest: {
+                    app: "Terminal",
+                    title: "Terminal Task",
+                    content: "Use Terminal to execute commands"
+                }
+            };
+
+            const result = await grader.evaluateSession(chunks, appValidationMeta);
+
+            // Basic sanity checks
+            expect(result.summary.length).toBeGreaterThan(0);
+            expect(result.observations.length).toBeGreaterThan(0);
+            expect(result.reasoning.length).toBeGreaterThan(0);
+            expect(result.score).toBeGreaterThanOrEqual(0);
+            expect(result.score).toBeLessThanOrEqual(100);
+
+            // App validation specific checks
+            expect(result.reasoning).toContain("Terminal");
+            expect(result.summary.toLowerCase()).toContain("terminal");
+            
+            // Should mention app usage in observations or reasoning
+            const fullText = `${result.observations} ${result.reasoning} ${result.summary}`.toLowerCase();
+            expect(fullText).toContain("application");
+
+            console.log(`✅ App validation integration test — score=${result.score}/100`);
+            console.log(`📱 Detected app usage patterns in reasoning: ${result.reasoning.includes("Terminal")}`);
+        },
+        60_000
+    );
+
+    it(
+        "handles app timeline analysis with real API",
+        async () => {
+            if (!process.env.OPENAI_API_KEY) {
+                console.log("⏭️  Skipping: OPENAI_API_KEY not set");
+                return;
+            }
+
+            const logger = new IntegrationLogger();
+            const config: GraderConfig = {
+                apiKey: process.env.OPENAI_API_KEY!,
+                chunkSize: 2,
+                model: "gpt-4o-mini",
+                timeout: 30_000,
+                maxRetries: 2,
+            };
+
+            const grader = new Grader(config, logger);
+
+            // Create timeline with multiple app switches
+            const timelineActions = [
+                'app_focus({"focused_app": "Terminal"})',
+                'type_text("pwd")',
+                'app_focus({"focused_app": "Chrome"})',
+                'navigate_to("website")',
+                'app_focus({"focused_app": "Terminal"})',
+                'type_text("ls")'
+            ];
+
+            const chunks = toChunks(timelineActions, 2);
+
+            const timelineMeta: MetaData = {
+                sessionId: "timeline-integration-test",
+                platform: "desktop",
+                taskDescription: "Work primarily in Terminal with minimal browser usage",
+                quest: {
+                    app: "Terminal",
+                    title: "Terminal Focus Task"
+                }
+            };
+
+            const result = await grader.evaluateSession(chunks, timelineMeta);
+
+            expect(result.score).toBeGreaterThanOrEqual(0);
+            expect(result.score).toBeLessThanOrEqual(100);
+
+            // Efficiency should be affected by app switching
+            expect(result.efficiency).toBeLessThan(90);
+
+            console.log(`✅ Timeline analysis integration test — efficiency=${result.efficiency}/100`);
+        },
+        60_000
     );
 });
