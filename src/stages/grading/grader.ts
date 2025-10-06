@@ -202,6 +202,23 @@ export class Grader {
      * Evaluate a full session.
      */
     async evaluateSession(chunks: Chunk[], meta: MetaData): Promise<GradeResult> {
+        console.log(`[GRADER-DEBUG] Evaluating session with ${chunks.length} chunks, expected app: ${meta.quest?.app}`);
+        
+        // Count app_focus events across all chunks
+        let appFocusCount = 0;
+        let detectedApps = new Set<string>();
+        chunks.forEach((chunk) => {
+            chunk.forEach((item) => {
+                if (item.type === 'app_focus') {
+                    appFocusCount++;
+                    const focusedApp = item.data?.focused_app;
+                    if (focusedApp && focusedApp !== 'Unknown') {
+                        detectedApps.add(focusedApp);
+                    }
+                }
+            });
+        });
+        console.log(`[GRADER-DEBUG] Found ${appFocusCount} app_focus events, detected apps: [${Array.from(detectedApps).join(', ')}]`);
         const summaries: string[] = [];
         let prevSummary: string | null = null;
 
@@ -953,6 +970,16 @@ export class Grader {
                     }
                 }
                 imageCount++;
+            } else if (item.type === "app_focus") {
+                // Convert app_focus events to text for LLM consumption
+                const focusedApp = item.data?.focused_app || 'Unknown';
+                const availableApps = item.data?.available_apps || [];
+                const appFocusText = `app_focus(focused: "${focusedApp}", available: [${availableApps.join(', ')}])`;
+                const sanitizedText = sanitizeUserInput(appFocusText);
+                const text = this.truncate(sanitizedText, this.maxTextPerMessage);
+                if (text) {
+                    parts.push({ type: "text", text });
+                }
             }
         }
 

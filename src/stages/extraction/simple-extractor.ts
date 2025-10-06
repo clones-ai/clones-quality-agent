@@ -452,6 +452,8 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
             const availableApps = axData.tree?.map((app: any) => app.name) || [];
             const allWindows = axData.tree || [];
             
+            console.log(`[EXTRACTOR-DEBUG] app_focus event - focused: ${focusedApp}, available: [${availableApps.join(', ')}]`);
+            
             // Always capture app focus events to build timeline, even if no focused app
             processedEvents.push({
               type: 'app_focus',
