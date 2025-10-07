@@ -35,7 +35,14 @@ interface InputEvent {
     axis?: string;
     value?: number;
     output?: string;
-    // AXTree data structure
+    // AXTree data structure (directly in data for axtree_interaction events)
+    focused_app?: {
+      name?: string;
+    };
+    tree?: Array<{
+      name: string;
+    }>;
+    // Nested data structure for other events
     data?: {
       focused_app?: {
         name?: string;
@@ -264,6 +271,9 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
     for (const event of events) {
       const time = event.time - epoch;
 
+      // Debug: Log all event types to see what we're processing
+      console.log(`[EXTRACTOR-DEBUG] Processing event: ${event.event}`);
+
       // Check if we need to flush text based on time since last key
       if (currentText && lastKeyTime !== null && time - lastKeyTime > 1000) {
         flushText();
@@ -445,8 +455,11 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
         case 'axtree_interaction': {
           flushText();
           
+          // Debug: Show the actual structure of event.data
+          console.log(`[EXTRACTOR-DEBUG] axtree_interaction data structure:`, JSON.stringify(event.data, null, 2));
+          
           // Extract focused app and complete window hierarchy from AXTree data
-          const axData = event.data?.data;
+          const axData = event.data;  // Direct access, no nested .data
           if (axData) {
             const focusedApp = axData.focused_app?.name;
             const availableApps = axData.tree?.map((app: any) => app.name) || [];
