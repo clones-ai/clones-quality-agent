@@ -151,6 +151,21 @@ export class MessageFormatter implements PipelineStage<ProcessedEvent[], Message
                         });
                     }
                     break;
+
+                case "app_focus":
+                    // Convert app_focus events to structured messages for SFT
+                    const focusedApp = event.data.focused_app || 'Unknown';
+                    const availableApps = event.data.available_apps || [];
+                    const appFocusAction = `app_focus(focused: "${focusedApp}", available: [${availableApps.join(', ')}])`;
+                    
+                    console.log(`[FORMATTER-DEBUG] Processing app_focus event: ${appFocusAction}`);
+                    
+                    messages.push({
+                        role: "assistant",
+                        content: "```python\n" + appFocusAction + "\n```",
+                        timestamp: event.timestamp
+                    });
+                    break;
             }
         }
 

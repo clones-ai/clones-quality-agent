@@ -473,6 +473,14 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
     // Flush any remaining text
     flushText();
 
+    // Debug: Count event types
+    const eventTypeCounts = processedEvents.reduce((acc, event) => {
+      acc[event.type] = (acc[event.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    console.log(`[EXTRACTOR-DEBUG] Generated ${processedEvents.length} total events: ${JSON.stringify(eventTypeCounts)}`);
+
     return processedEvents;
   }
 

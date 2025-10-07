@@ -134,6 +134,19 @@ export type LLMContentItem =
         mime?: "image/jpeg" | "image/png";
         /** Optional short note (e.g., click area / crop context). */
         cropInfo?: string;
+    }
+    | {
+        type: "app_focus";
+        timestamp: number;
+        data: {
+            focused_app?: string;
+            available_apps?: string[];
+            all_windows?: Array<{
+                name: string;
+                role?: string;
+                children?: any[];
+            }>;
+        };
     };
 
 /** A chunk is a list of items describing a contiguous slice of the trajectory. */
