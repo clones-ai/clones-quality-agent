@@ -3,6 +3,11 @@ import { Message, ProcessedEvent, PipelineStage } from "../../shared/types";
 export class MessageFormatter implements PipelineStage<ProcessedEvent[], Message[]> {
     async process(events: ProcessedEvent[]): Promise<Message[]> {
         const messages: Message[] = [];
+        console.log(`[FORMATTER-DEBUG] Processing ${events.length} events, looking for app_focus events...`);
+        
+        // Count app_focus events
+        const appFocusCount = events.filter(e => e.type === 'app_focus').length;
+        console.log(`[FORMATTER-DEBUG] Found ${appFocusCount} app_focus events in input`);
 
         for (const event of events) {
             switch (event.type) {
