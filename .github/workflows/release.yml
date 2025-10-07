@@ -59,7 +59,7 @@ jobs:
         run: ls -R artifacts/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.NEW_TAG }}
           name: Release ${{ env.NEW_TAG }}
@@ -67,5 +67,7 @@ jobs:
           prerelease: false
           files: artifacts/artifact/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
