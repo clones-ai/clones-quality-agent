@@ -112,9 +112,9 @@ export interface MetaData {
     sessionId: string;
     id?: string;
     quest?: {
-        title: string;
+        title?: string;
         app: string;
-        content: string;
+        content?: string;
         objectives?: string[];
     };
 

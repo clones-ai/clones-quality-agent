@@ -467,16 +467,21 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
             
             console.log(`[EXTRACTOR-DEBUG] app_focus event - focused: ${focusedApp}, available: [${availableApps.join(', ')}]`);
             
-            // Always capture app focus events to build timeline, even if no focused app
-            processedEvents.push({
-              type: 'app_focus',
-              timestamp: time,
-              data: { 
-                focused_app: focusedApp || 'Unknown',
-                available_apps: availableApps,
-                all_windows: allWindows
-              }
-            });
+            // Only capture app focus events when we have a valid focused app
+            if (focusedApp) {
+              processedEvents.push({
+                type: 'app_focus',
+                timestamp: time,
+                data: { 
+                  focused_app: focusedApp,
+                  available_apps: availableApps,
+                  all_windows: allWindows
+                }
+              });
+              console.log(`[EXTRACTOR-DEBUG] ✅ Generated app_focus event for: ${focusedApp}`);
+            } else {
+              console.log(`[EXTRACTOR-DEBUG] ❌ Skipped app_focus event - no focused app`);
+            }
           }
           break;
         }

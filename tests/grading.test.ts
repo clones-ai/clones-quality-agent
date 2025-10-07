@@ -10,6 +10,10 @@ import {
     TransientError
 } from "../src/stages/grading/grader/errors";
 import { Grader } from "../src/stages/grading/grader";
+import { DemoDesktopExtractor } from "../src/stages/extraction/simple-extractor";
+import { MessageFormatter } from "../src/stages/formatting/message-formatter";
+import path from "path";
+import fs from "fs";
 
 // Minimal spy helper using Bun's built-in function mocking
 function mock(fn: (...args: any[]) => any) {
@@ -1498,14 +1502,16 @@ describe("Grader - application usage validation", () => {
         const chunks: Chunk[] = [
             [
                 { type: "text", text: "click('button')" },
-                { type: "app_focus", timestamp: 1000, data: { 
-                    focused_app: "Chrome", 
-                    available_apps: ["Chrome", "Terminal"],
-                    all_windows: [
-                        { name: "Chrome", role: "application" },
-                        { name: "Terminal", role: "application" }
-                    ]
-                }}
+                {
+                    type: "app_focus", timestamp: 1000, data: {
+                        focused_app: "Chrome",
+                        available_apps: ["Chrome", "Terminal"],
+                        all_windows: [
+                            { name: "Chrome", role: "application" },
+                            { name: "Terminal", role: "application" }
+                        ]
+                    }
+                }
             ]
         ];
 
@@ -1525,14 +1531,16 @@ describe("Grader - application usage validation", () => {
         const chunks: Chunk[] = [
             [
                 { type: "text", text: "type_text('ls -la')" },
-                { type: "app_focus", timestamp: 1000, data: { 
-                    focused_app: "Terminal", 
-                    available_apps: ["Chrome", "Terminal"],
-                    all_windows: [
-                        { name: "Chrome", role: "application" },
-                        { name: "Terminal", role: "application" }
-                    ]
-                }}
+                {
+                    type: "app_focus", timestamp: 1000, data: {
+                        focused_app: "Terminal",
+                        available_apps: ["Chrome", "Terminal"],
+                        all_windows: [
+                            { name: "Chrome", role: "application" },
+                            { name: "Terminal", role: "application" }
+                        ]
+                    }
+                }
             ]
         ];
 
@@ -1551,24 +1559,30 @@ describe("Grader - application usage validation", () => {
         const chunks: Chunk[] = [
             [
                 { type: "text", text: "open_terminal()" },
-                { type: "app_focus", timestamp: 1000, data: { 
-                    focused_app: "Terminal", 
-                    available_apps: ["Chrome", "Terminal"]
-                }}
+                {
+                    type: "app_focus", timestamp: 1000, data: {
+                        focused_app: "Terminal",
+                        available_apps: ["Chrome", "Terminal"]
+                    }
+                }
             ],
             [
                 { type: "text", text: "switch_to_browser()" },
-                { type: "app_focus", timestamp: 2000, data: { 
-                    focused_app: "Chrome", 
-                    available_apps: ["Chrome", "Terminal"]
-                }}
+                {
+                    type: "app_focus", timestamp: 2000, data: {
+                        focused_app: "Chrome",
+                        available_apps: ["Chrome", "Terminal"]
+                    }
+                }
             ],
             [
                 { type: "text", text: "back_to_terminal()" },
-                { type: "app_focus", timestamp: 3000, data: { 
-                    focused_app: "Terminal", 
-                    available_apps: ["Chrome", "Terminal"]
-                }}
+                {
+                    type: "app_focus", timestamp: 3000, data: {
+                        focused_app: "Terminal",
+                        available_apps: ["Chrome", "Terminal"]
+                    }
+                }
             ]
         ];
 
@@ -1605,10 +1619,12 @@ describe("Grader - application usage validation", () => {
         const chunks: Chunk[] = [
             [
                 { type: "text", text: "test_action()" },
-                { type: "app_focus", timestamp: 1000, data: { 
-                    focused_app: "VSCode", 
-                    available_apps: ["VSCode"]
-                }}
+                {
+                    type: "app_focus", timestamp: 1000, data: {
+                        focused_app: "VSCode",
+                        available_apps: ["VSCode"]
+                    }
+                }
             ]
         ];
 
@@ -2001,5 +2017,109 @@ describe("Grader - observability and metrics", () => {
                 platform: "web"
             })
         ).resolves.toBeDefined();
+    });
+});
+
+describe("Desktop Pipeline - SFT Generation from Test Data", () => {
+    test("generates sft.json from input_log.jsonl with app_focus events", async () => {
+        const testDataDir = path.join(process.cwd(), "data", "tests", "grader", "20251007_131852");
+        const inputLogPath = path.join(testDataDir, "input_log.jsonl");
+        const metaPath = path.join(testDataDir, "meta.json");
+
+        // Verify test data exists
+        expect(fs.existsSync(inputLogPath)).toBe(true);
+        expect(fs.existsSync(metaPath)).toBe(true);
+
+        console.log(`[TEST-DEBUG] Processing test data from: ${testDataDir}`);
+
+        // Step 1: Extract events from input_log.jsonl  
+        // DemoDesktopExtractor expects the parent directory, sessionId is the folder name
+        const parentDir = path.dirname(testDataDir);
+        const sessionId = path.basename(testDataDir);
+        const extractor = new DemoDesktopExtractor(parentDir);
+        const events = await extractor.process(sessionId);
+
+        console.log(`[TEST-DEBUG] Extracted ${events.length} events`);
+
+        // Verify we have app_focus events
+        const appFocusEvents = events.filter(e => e.type === 'app_focus');
+        console.log(`[TEST-DEBUG] Found ${appFocusEvents.length} app_focus events`);
+        expect(appFocusEvents.length).toBeGreaterThan(0);
+
+        // Log ALL app_focus events for debugging
+        console.log(`[TEST-DEBUG] All app_focus events:`);
+        appFocusEvents.forEach((event, index) => {
+            console.log(`  ${index + 1}. focused_app: "${event.data.focused_app}", timestamp: ${event.timestamp}`);
+        });
+
+        // Step 2: Format events into SFT messages
+        const formatter = new MessageFormatter();
+        const messages = await formatter.process(events);
+
+        console.log(`[TEST-DEBUG] Generated ${messages.length} messages`);
+
+        // Step 3: Verify app_focus events are in messages
+        const appFocusMessages = messages.filter(msg =>
+            msg.role === "assistant" &&
+            typeof msg.content === "string" &&
+            msg.content.includes("app_focus")
+        );
+
+        console.log(`[TEST-DEBUG] Found ${appFocusMessages.length} app_focus messages`);
+        expect(appFocusMessages.length).toBeGreaterThan(0);
+
+        // Log the first app_focus message for debugging
+        if (appFocusMessages.length > 0) {
+            console.log(`[TEST-DEBUG] First app_focus message:`, appFocusMessages[0]);
+        }
+
+        // Step 3b: Verify app_focus events have structured data for grader
+        const structuredAppFocusMessages = messages.filter(msg =>
+            msg.type === 'app_focus' &&
+            msg.data?.focused_app !== undefined
+        );
+
+        console.log(`[TEST-DEBUG] Found ${structuredAppFocusMessages.length} structured app_focus messages`);
+        expect(structuredAppFocusMessages.length).toBeGreaterThan(0);
+
+        // Verify first structured message has all required fields
+        if (structuredAppFocusMessages.length > 0) {
+            const firstMsg = structuredAppFocusMessages[0];
+            expect(firstMsg.type).toBe('app_focus');
+            expect(firstMsg.data).toBeDefined();
+            expect(firstMsg.data?.focused_app).toBeDefined();
+            expect(firstMsg.data?.available_apps).toBeInstanceOf(Array);
+            console.log(`[TEST-DEBUG] First structured app_focus:`, {
+                focused: firstMsg.data?.focused_app,
+                available: firstMsg.data?.available_apps
+            });
+        }
+
+        // Step 4: Create SFT format
+        const sftData = {
+            messages: messages
+        };
+
+        // Step 5: Write sft.json for manual inspection
+        const sftPath = path.join(testDataDir, "sft_generated_test.json");
+        fs.writeFileSync(sftPath, JSON.stringify(sftData, null, 2));
+
+        console.log(`[TEST-DEBUG] Generated SFT file: ${sftPath}`);
+        console.log(`[TEST-DEBUG] SFT contains ${sftData.messages.length} total messages`);
+
+        // Verify SFT structure
+        expect(sftData.messages).toBeInstanceOf(Array);
+        expect(sftData.messages.length).toBeGreaterThan(0);
+
+        // Verify all messages have required fields
+        for (const message of sftData.messages) {
+            expect(message).toHaveProperty('role');
+            expect(message).toHaveProperty('content');
+            expect(message).toHaveProperty('timestamp');
+            expect(['user', 'assistant']).toContain(message.role);
+        }
+
+        // Success
+        console.log(`[TEST-DEBUG] ✅ Successfully generated SFT with app_focus events`);
     });
 });

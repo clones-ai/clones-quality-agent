@@ -4,7 +4,7 @@ export class MessageFormatter implements PipelineStage<ProcessedEvent[], Message
     async process(events: ProcessedEvent[]): Promise<Message[]> {
         const messages: Message[] = [];
         console.log(`[FORMATTER-DEBUG] Processing ${events.length} events, looking for app_focus events...`);
-        
+
         // Count app_focus events
         const appFocusCount = events.filter(e => e.type === 'app_focus').length;
         console.log(`[FORMATTER-DEBUG] Found ${appFocusCount} app_focus events in input`);
@@ -159,16 +159,23 @@ export class MessageFormatter implements PipelineStage<ProcessedEvent[], Message
 
                 case "app_focus":
                     // Convert app_focus events to structured messages for SFT
+                    // Preserve structured data for grader while also including human-readable content
                     const focusedApp = event.data.focused_app || 'Unknown';
                     const availableApps = event.data.available_apps || [];
                     const appFocusAction = `app_focus(focused: "${focusedApp}", available: [${availableApps.join(', ')}])`;
-                    
+
                     console.log(`[FORMATTER-DEBUG] Processing app_focus event: ${appFocusAction}`);
-                    
+
                     messages.push({
                         role: "assistant",
                         content: "```python\n" + appFocusAction + "\n```",
-                        timestamp: event.timestamp
+                        timestamp: event.timestamp,
+                        type: "app_focus",
+                        data: {
+                            focused_app: event.data.focused_app,
+                            available_apps: event.data.available_apps,
+                            all_windows: event.data.all_windows
+                        }
                     });
                     break;
             }

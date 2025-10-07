@@ -1,0 +1,524 @@
+{
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "```python\nclick(1097.95703125, 854.09765625)\n```",
+      "timestamp": 1616
+    },
+    {
+      "role": "assistant",
+      "content": "```python\napp_focus(focused: \"Word\", available: [Docker Desktop, Finder, Microsoft Word, MongoDB Compass, Telegram])\n```",
+      "timestamp": 2649
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(614.3046875, 520.89453125)\n```",
+      "timestamp": 2633
+    },
+    {
+      "role": "assistant",
+      "content": "```python\ntype(\"ccoouuccoouu\")\n```",
+      "timestamp": 3116
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"Return\")\n```",
+      "timestamp": 4797
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"Return\")\n```",
+      "timestamp": 4797
+    },
+    {
+      "role": "assistant",
+      "content": "```python\napp_focus(focused: \"Word\", available: [Microsoft Word, MongoDB Compass, Telegram, Finder, Docker Desktop])\n```",
+      "timestamp": 4827
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"Return\")\n```",
+      "timestamp": 4956
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"Return\")\n```",
+      "timestamp": 4956
+    },
+    {
+      "role": "assistant",
+      "content": "```python\napp_focus(focused: \"Word\", available: [Telegram, Finder, MongoDB Compass, Docker Desktop, Microsoft Word])\n```",
+      "timestamp": 6279
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(2075.01171875, -447.625)\n```",
+      "timestamp": 6272
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(2076.125, -425.1796875)\n```",
+      "timestamp": 6797
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-2)\n```",
+      "timestamp": 7439
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-2)\n```",
+      "timestamp": 7439
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-10)\n```",
+      "timestamp": 7447
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-10)\n```",
+      "timestamp": 7447
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-16)\n```",
+      "timestamp": 7456
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-16)\n```",
+      "timestamp": 7456
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-24)\n```",
+      "timestamp": 7464
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-24)\n```",
+      "timestamp": 7464
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-29)\n```",
+      "timestamp": 7472
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-29)\n```",
+      "timestamp": 7472
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-44)\n```",
+      "timestamp": 7481
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-44)\n```",
+      "timestamp": 7481
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7489
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7489
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7497
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7497
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-28)\n```",
+      "timestamp": 7505
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-28)\n```",
+      "timestamp": 7505
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7514
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7514
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-23)\n```",
+      "timestamp": 7523
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-23)\n```",
+      "timestamp": 7523
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-25)\n```",
+      "timestamp": 7532
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-25)\n```",
+      "timestamp": 7532
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-15)\n```",
+      "timestamp": 7540
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-15)\n```",
+      "timestamp": 7540
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-14)\n```",
+      "timestamp": 7548
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(0)\n```",
+      "timestamp": 7549
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-14)\n```",
+      "timestamp": 7549
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(0)\n```",
+      "timestamp": 7549
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7555
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7556
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-47)\n```",
+      "timestamp": 7565
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-47)\n```",
+      "timestamp": 7565
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7573
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7573
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-50)\n```",
+      "timestamp": 7581
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-50)\n```",
+      "timestamp": 7581
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7590
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7590
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-49)\n```",
+      "timestamp": 7597
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-49)\n```",
+      "timestamp": 7598
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7605
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-51)\n```",
+      "timestamp": 7605
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-49)\n```",
+      "timestamp": 7614
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-49)\n```",
+      "timestamp": 7614
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-47)\n```",
+      "timestamp": 7622
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-47)\n```",
+      "timestamp": 7622
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-48)\n```",
+      "timestamp": 7632
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-48)\n```",
+      "timestamp": 7632
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-45)\n```",
+      "timestamp": 7639
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-45)\n```",
+      "timestamp": 7640
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-45)\n```",
+      "timestamp": 7648
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-45)\n```",
+      "timestamp": 7649
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-43)\n```",
+      "timestamp": 7656
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-43)\n```",
+      "timestamp": 7656
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7664
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7664
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7672
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-41)\n```",
+      "timestamp": 7672
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-40)\n```",
+      "timestamp": 7680
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-40)\n```",
+      "timestamp": 7680
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7690
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7690
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7698
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-38)\n```",
+      "timestamp": 7698
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-36)\n```",
+      "timestamp": 7707
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-36)\n```",
+      "timestamp": 7707
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-34)\n```",
+      "timestamp": 7715
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-34)\n```",
+      "timestamp": 7715
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-34)\n```",
+      "timestamp": 7723
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-34)\n```",
+      "timestamp": 7723
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-32)\n```",
+      "timestamp": 7731
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-32)\n```",
+      "timestamp": 7731
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-31)\n```",
+      "timestamp": 7740
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-31)\n```",
+      "timestamp": 7740
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-30)\n```",
+      "timestamp": 7748
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-30)\n```",
+      "timestamp": 7748
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-30)\n```",
+      "timestamp": 7757
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-30)\n```",
+      "timestamp": 7757
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-28)\n```",
+      "timestamp": 7765
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-28)\n```",
+      "timestamp": 7766
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-27)\n```",
+      "timestamp": 7774
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(-27)\n```",
+      "timestamp": 7774
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(0)\n```",
+      "timestamp": 7777
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nscroll(0)\n```",
+      "timestamp": 7777
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"MetaLeft-tab\")\n```",
+      "timestamp": 8284
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nhotkey(\"Tab\")\n```",
+      "timestamp": 8284
+    },
+    {
+      "role": "assistant",
+      "content": "```python\napp_focus(focused: \"Word\", available: [Microsoft Word, Docker Desktop, Finder, Telegram, MongoDB Compass])\n```",
+      "timestamp": 8818
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(1304.91796875, 864.31640625)\n```",
+      "timestamp": 8816
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(892.24609375, 242.734375)\n```",
+      "timestamp": 9616
+    },
+    {
+      "role": "assistant",
+      "content": "```python\nclick(884.52734375, 278.8359375)\n```",
+      "timestamp": 9916
+    }
+  ]
+}

@@ -48,6 +48,17 @@ export interface Message {
         data: string;
     };
     timestamp: number;
+    // Optional fields for special event types (e.g., app_focus)
+    type?: 'app_focus';
+    data?: {
+        focused_app?: string;
+        available_apps?: string[];
+        all_windows?: Array<{
+            name: string;
+            role?: string;
+            children?: any[];
+        }>;
+    };
 }
 
 export interface ProcessedEvent {
