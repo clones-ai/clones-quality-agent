@@ -203,7 +203,7 @@ export class Grader {
      */
     async evaluateSession(chunks: Chunk[], meta: MetaData): Promise<GradeResult> {
         console.log(`[GRADER-DEBUG] Evaluating session with ${chunks.length} chunks, expected app: ${meta.quest?.app}`);
-        
+
         // Count app_focus events across all chunks
         let appFocusCount = 0;
         let detectedApps = new Set<string>();
@@ -268,9 +268,34 @@ export class Grader {
         totalChunks: number
     ): Promise<string> {
         const actionCount = this.countActionsInChunk(chunk);
+
+        // Count app_focus events in this chunk
+        let chunkAppFocusCount = 0;
+        const chunkAppFocusApps = new Set<string>();
+        chunk.forEach((item) => {
+            if (item.type === 'app_focus') {
+                chunkAppFocusCount++;
+                const focusedApp = item.data?.focused_app;
+                if (focusedApp && focusedApp !== 'Unknown') {
+                    chunkAppFocusApps.add(focusedApp);
+                }
+            }
+        });
+
         const systemPrompt = this.buildSystemPrompt(meta, prevSummary, false, chunkIndex, totalChunks, actionCount);
 
+        // Add app_focus statistics to chunk evaluation
+        const appFocusInfo = chunkAppFocusCount > 0
+            ? `[Application Context] This chunk contains ${chunkAppFocusCount} app_focus event(s) showing focus on: ${Array.from(chunkAppFocusApps).join(', ')}. ` +
+            `Use this to confirm which app was active. Now analyze the screenshots and actions below.\n`
+            : '';
+
         const userContent = this.formatMessageContent(chunk);
+
+        // Add app focus info as first text item if present
+        if (appFocusInfo) {
+            userContent.unshift({ type: "text", text: appFocusInfo });
+        }
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: "system", content: systemPrompt },
@@ -289,6 +314,31 @@ export class Grader {
     }
 
     private async finalizeEvaluation(summaries: string[], chunks: Chunk[], meta: MetaData): Promise<GradeResult> {
+        // Count app_focus events across all chunks for final evaluation
+        const appFocusCounts = new Map<string, number>();
+        let totalAppFocusEvents = 0;
+
+        chunks.forEach((chunk) => {
+            chunk.forEach((item) => {
+                if (item.type === 'app_focus') {
+                    totalAppFocusEvents++;
+                    const focusedApp = item.data?.focused_app;
+                    if (focusedApp && focusedApp !== 'Unknown') {
+                        appFocusCounts.set(focusedApp, (appFocusCounts.get(focusedApp) || 0) + 1);
+                    }
+                }
+            });
+        });
+
+        // Format app_focus statistics for prompt
+        const appFocusStats = Array.from(appFocusCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([app, count]) => {
+                const percentage = totalAppFocusEvents > 0 ? ((count / totalAppFocusEvents) * 100).toFixed(1) : '0';
+                return `  • ${app}: ${count} events (${percentage}%)`;
+            })
+            .join('\n');
+
         const systemPrompt = this.buildSystemPrompt(
             meta,
             null,
@@ -299,9 +349,27 @@ export class Grader {
         );
 
         const finalUserText =
-            `You are given the list of chunk summaries for the full session.\n` +
-            `Summaries:\n- ` +
-            summaries.map((s) => s.replace(/\s+/g, " ").trim()).join("\n- ");
+            `═══════════════════════════════════════════════════════════════\n` +
+            `APPLICATION CONTEXT (from app_focus events):\n` +
+            `═══════════════════════════════════════════════════════════════\n` +
+            `Total app_focus events: ${totalAppFocusEvents}\n` +
+            (appFocusStats || '  (No app_focus events detected)') +
+            `\n` +
+            `Target application: ${meta.quest?.app || 'Not specified'}\n` +
+            `\n` +
+            `Use this to confirm which application(s) were used.\n` +
+            `The summaries below contain the actual screenshots and actions.\n` +
+            `═══════════════════════════════════════════════════════════════\n` +
+            `\n` +
+            `CHUNK SUMMARIES (containing screenshots + actions analysis):\n` +
+            summaries.map((s, i) => `\nChunk ${i + 1}:\n${s.replace(/\s+/g, " ").trim()}`).join("\n") +
+            `\n\n` +
+            `═══════════════════════════════════════════════════════════════\n` +
+            `YOUR TASK: Synthesize the above summaries into a final evaluation.\n` +
+            `- Base outcome score on task completion evidence from summaries (screenshots + actions)\n` +
+            `- Use app_focus stats above to validate correct application usage\n` +
+            `- Cite specific evidence from summaries in your reasoning fields\n` +
+            `═══════════════════════════════════════════════════════════════`;
 
         const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: "system", content: systemPrompt },
@@ -815,14 +883,52 @@ export class Grader {
                 : 'N/A'
             }` +
             `\n<app> tags represents the main application name. ` +
-            `\nCRITICAL APPLICATION VALIDATION: You must verify that the user used the CORRECT APPLICATION (${meta.quest?.app || 'specified app'}) for this task. ` +
-            `Look for app_focus events in the user actions to track which applications were actually used during the session. ` +
-            `If the user spent significant time in wrong applications or never used the target app, this should severely impact the outcome score. ` +
-            `\nCRITICAL: You must ANALYZE THE SCREENSHOTS to identify specific UI elements, buttons, text, pages, and content. ` +
-            `Your primary job is to document SPECIFIC ACTIONS taken by the user by examining what is visible in each screenshot. ` +
+            `\n═══════════════════════════════════════════════════════════════` +
+            `\nCRITICAL: THREE-LAYER EVIDENCE ANALYSIS` +
+            `\n═══════════════════════════════════════════════════════════════` +
+            `\nYou must analyze THREE types of evidence together:` +
+            `\n` +
+            `\n📱 LAYER 1 - app_focus events (Application Context):` +
+            `\n   • Purpose: Confirm WHICH application was active/launched` +
+            `\n   • Example: app_focus(focused: "Word") = Word is the active application` +
+            `\n   • Usage: Use this to verify the CORRECT app was used (not wrong app)` +
+            `\n   • DO NOT use this alone to determine task completion` +
+            `\n` +
+            `\n🖼️ LAYER 2 - Screenshots (Visual Evidence):` +
+            `\n   • Purpose: See WHAT is displayed (menus, buttons, content, dialogs, pages)` +
+            `\n   • Example: Screenshot shows "File" menu open with "New Document" option` +
+            `\n   • Usage: PRIMARY evidence for understanding what the user saw and accessed` +
+            `\n   • CRITICAL: Always describe visible UI elements by their text/labels` +
+            `\n` +
+            `\n🖱️⌨️ LAYER 3 - Actions (User Interactions):` +
+            `\n   • Mouse clicks: click(x, y) - coordinates match locations in screenshots` +
+            `\n   • Keyboard input: type("text") - text entered by user` +
+            `\n   • Scrolling: scroll(delta) - page/content navigation` +
+            `\n   • Purpose: Show WHAT the user actually did` +
+            `\n   • Usage: PRIMARY evidence for evaluating task completion` +
+            `\n` +
+            `\n✅ CORRECT EVALUATION PROCESS:` +
+            `\n1. Check app_focus → Confirm correct application was used` +
+            `\n2. Look at screenshots → Identify UI elements, menus, buttons at coordinates` +
+            `\n3. Match actions to screenshots → "click(245, 89)" + screenshot showing "File" button at that location = "Clicked File menu"` +
+            `\n4. Evaluate task completion based on: screenshots + actions combined` +
+            `\n` +
+            `\n❌ INCORRECT EVALUATION (DO NOT DO THIS):` +
+            `\n- Saying "user never launched Word" when app_focus events show Word` +
+            `\n- Ignoring screenshots and only describing coordinate clicks` +
+            `\n- Relying only on app_focus without analyzing what was actually done` +
+            `\n═══════════════════════════════════════════════════════════════` +
+            `\n` +
+            `\nCRITICAL APPLICATION VALIDATION: Use app_focus events to verify the CORRECT APPLICATION (${meta.quest?.app || 'specified app'}) was used. ` +
+            `If app_focus shows the target app, the app WAS launched. Then evaluate task completion by analyzing screenshots + mouse/keyboard actions. ` +
+            `Only penalize if app_focus shows user spent significant time in WRONG applications. ` +
+            `\nYOUR PRIMARY JOB: Match mouse clicks and keyboard actions to visible UI elements in screenshots. ` +
+            `When you see click(x, y), look at that location in the screenshot to identify what was clicked. ` +
+            `When you see type("text"), look at screenshot context to see where text was entered. ` +
             `Look at the screenshots to identify: website or application names, page titles, button text, section names, article headlines, form fields, etc. ` +
             `Base every claim on explicit citations from the Evidence ledger or the provided summaries. If not cited, lower confidence. ` +
             `Do not infer 'no progress' unless you can point to evidence that contradicts completion (e.g., explicit error states). ` +
+            `IMPORTANT: If app_focus events show the correct app AND screenshots show relevant UI, assume positive progress unless explicit failures are visible. ` +
             `When describing user actions, be specific about what buttons/elements were clicked, what text was typed, what pages were navigated to. ` +
             `EXAMPLE: Instead of "clicked on coordinates" say "clicked on 'Sign In' button" or "clicked on 'Technology' section header". ` +
             `FORBIDDEN: Never use vague phrases like "engaged in a series of clicks", "performed various actions", or "clicked on coordinates". ` +
@@ -834,19 +940,40 @@ export class Grader {
 
         const rubric =
             `Use the following rubric for scoring:\n` +
-            `- Outcome Achievement: Score near 100 for perfect task completion IN THE CORRECT APPLICATION. Score near 0 if the core goal was missed entirely OR if the wrong application was used extensively.\n` +
-            `- Process Quality: Score near 100 for a flawless, optimal path IN THE CORRECT APPLICATION. Reduce the score for errors, confusion, significant deviations, or incorrect app usage.\n` +
-            `- Efficiency: Score near 100 for the most direct path with no wasted actions IN THE CORRECT APPLICATION. Reduce the score for unnecessary steps, long hesitations, or time spent in wrong applications.\n\n` +
+            `\n` +
+            `EVALUATION HIERARCHY (in order of importance):\n` +
+            `1. Task completion: Did the user accomplish the stated objectives? (judge from screenshots + actions)\n` +
+            `2. Correct application: Was the right app used? (judge from app_focus events)\n` +
+            `3. Process quality: Was the path optimal? (judge from action sequence)\n` +
+            `4. Efficiency: Was it done quickly? (judge from action count)\n` +
+            `\n` +
+            `- Outcome Achievement: Score based on task completion visible in screenshots + actions.\n` +
+            `  * HIGH (80-100): Task objectives clearly met (evidence in screenshots showing success states, completed forms, created documents, etc.)\n` +
+            `  * MEDIUM (40-79): Partial completion (some objectives met, visible progress in screenshots)\n` +
+            `  * LOW (0-39): Little/no progress (screenshots show no relevant progress, or wrong application entirely)\n` +
+            `  * Application validation: app_focus events confirm WHICH app was used. Don't penalize for "not launching" if app_focus shows the app.\n` +
+            `\n` +
+            `- Process Quality: Score based on action sequence and decision-making visible in screenshots.\n` +
+            `  * HIGH (80-100): Direct path to objectives, logical action sequence, no errors visible\n` +
+            `  * MEDIUM (40-79): Some detours or confusion, but ultimately correct approach\n` +
+            `  * LOW (0-39): Major errors, wrong approaches, or extensive wrong app usage (check app_focus)\n` +
+            `\n` +
+            `- Efficiency: Score based on action count and unnecessary steps.\n` +
+            `  * HIGH (80-100): Minimal actions, direct path\n` +
+            `  * MEDIUM (40-79): Some extra clicks/scrolls but reasonable\n` +
+            `  * LOW (0-39): Many unnecessary actions, extensive wandering\n` +
+            `\n` +
             `Application Usage Validation:\n` +
-            `- If user spent >30% of time in wrong applications, cap outcome achievement at 50\n` +
-            `- If user never used the target application (${meta.quest?.app || 'specified app'}), outcome should be <30\n` +
-            `- Frequent app switching without purpose should reduce process quality\n` +
-            `- Time spent in irrelevant apps should significantly impact efficiency\n\n` +
+            `- Use app_focus events to confirm correct application usage\n` +
+            `- If target app (${meta.quest?.app || 'specified app'}) appears in app_focus events, the app WAS used\n` +
+            `- If >70% of app_focus events show WRONG apps, significantly reduce outcome/process scores\n` +
+            `- If 0 app_focus events for target app, cap outcome at 30 (wrong app or no app usage)\n` +
+            `\n` +
             `Efficiency guidance:\n` +
-            `- Do NOT double-count repeated minor mistakes.\n` +
-            `- Minor extra clicks/scrolls incur at most a small penalty.\n` +
-            `- If the main outcome is achieved, efficiency penalties must remain limited.\n` +
-            `- Text visible in screenshots is contextual; count it only if linked to a user action that uses it.`;
+            `- Count actual mouse clicks and keyboard actions to assess efficiency\n` +
+            `- Do NOT double-count repeated minor mistakes\n` +
+            `- Minor extra clicks/scrolls incur at most a small penalty\n` +
+            `- If main outcome is achieved, efficiency penalties must remain limited`;
 
         const weights =
             `Scoring weights (must be reflected in component scores): ` +
@@ -888,37 +1015,85 @@ export class Grader {
         const guidelines =
             isFinal
                 ? `CRITICAL REQUIREMENT: You must provide a justification for EACH of the four component scores (outcome, process, efficiency, confidence) in their corresponding '...Reasoning' field. This is a non-negotiable system rule. If you lack sufficient information for a score, you MUST explicitly state that in its reasoning field (e.g., "Insufficient data to assess efficiency"). OMITTING ANY REASONING FIELD WILL CAUSE A CATASTROPHIC SYSTEM FAILURE. All fields are mandatory.\n\n` +
-                `APPLICATION USAGE ANALYSIS: You MUST analyze app_focus events to validate correct application usage:\n` +
-                `• Track which applications were focused during the session\n` +
-                `• Calculate time spent in target app (${meta.quest?.app || 'specified app'}) vs other apps\n` +
-                `• Identify periods of irrelevant app usage or excessive context switching\n` +
-                `• Factor app usage accuracy into outcome, process, and efficiency scores\n` +
-                `• Mention app usage validation explicitly in your reasoning fields\n\n` +
-                `SUMMARY FORMAT: Write a detailed bullet-point summary by ANALYZING THE SCREENSHOTS to identify what was actually clicked/accessed:\n` +
-                `• Opened the [Website Name] website\n` +
-                `• Clicked on "[Button Text]" button/section\n` +
-                `• Navigated to [specific page name/title]\n` +
-                `• Typed "[specific text]" in [field name]\n` +
-                `• Clicked on "[Article Title]" or "[Link Text]"\n` +
-                `• Scrolled through [specific content area]\n` +
-                `• Focused on [Application Name] app (from app_focus events)\n` +
-                `EXAMINE each screenshot to identify visible text, buttons, page titles, and UI elements. Do NOT just describe coordinate clicks.\n\n` +
-                `CONFIDENCE REALISM: Confidence must scale with quantity/quality of cited evidence from the evidence ledger. High confidence (>80) requires multiple specific citations and detailed observations. Sparse evidence or contradictory findings should lower confidence accordingly.\n\n` +
+                `════════════════════════════════════════════════════════════════\n` +
+                `THREE-LAYER EVIDENCE ANALYSIS (Follow this process):\n` +
+                `════════════════════════════════════════════════════════════════\n` +
+                `\n` +
+                `STEP 1 - Application Context (app_focus events):\n` +
+                `• Count app_focus events by application to confirm which app was used\n` +
+                `• Target app: ${meta.quest?.app || 'specified app'}\n` +
+                `• If target app has >70% of events → Correct app used ✓\n` +
+                `• If target app has <30% of events → Wrong app penalty ✗\n` +
+                `• Purpose: Validates application choice, NOT task completion\n` +
+                `\n` +
+                `STEP 2 - Visual Evidence (screenshots):\n` +
+                `• Examine each screenshot to identify visible UI elements\n` +
+                `• Look for: menu text, button labels, dialog boxes, page titles, form fields, content\n` +
+                `• Document specific visible elements: "File menu", "New Document button", "Save dialog", etc.\n` +
+                `• Purpose: Shows WHAT was available to interact with\n` +
+                `\n` +
+                `STEP 3 - Action Evidence (mouse/keyboard):\n` +
+                `• Match click(x,y) coordinates to UI elements visible in screenshots at those locations\n` +
+                `• Example: click(120, 45) + screenshot showing "File" at that position = "Clicked File menu"\n` +
+                `• Document type("text") inputs and their context from screenshots\n` +
+                `• Count total actions for efficiency assessment\n` +
+                `• Purpose: PRIMARY evidence for task completion\n` +
+                `\n` +
+                `STEP 4 - Synthesize for Scoring:\n` +
+                `• Outcome: Based primarily on screenshots + actions showing task objectives met\n` +
+                `• Process: Based on action sequence logic and visible results in screenshots\n` +
+                `• Efficiency: Based on action count and directness\n` +
+                `• Application validation: Based on app_focus events\n` +
+                `════════════════════════════════════════════════════════════════\n\n` +
+                `SUMMARY FORMAT (describe actions by matching screenshots to clicks):\n` +
+                `• Launched/used [Application] (X app_focus events confirm correct app)\n` +
+                `• Clicked "[Button/Menu Text]" button (visible at coordinates in screenshot)\n` +
+                `• Typed "[exact text]" in [field name] (visible in screenshot)\n` +
+                `• Navigated to [specific page/dialog] (shown in subsequent screenshot)\n` +
+                `• Completed [objective] (final state visible in screenshot)\n` +
+                `\n` +
+                `REQUIRED: Match each action to visual evidence in screenshots.\n` +
+                `Example: "Clicked File menu (coordinates 120,45 match File button in screenshot 2), then clicked New Document (visible in dropdown)"\n\n` +
+                `CONFIDENCE SCALING:\n` +
+                `• High confidence (80-100): Multiple screenshots + actions clearly show task completion\n` +
+                `• Medium confidence (50-79): Some screenshots + actions suggest progress but ambiguous\n` +
+                `• Low confidence (<50): Sparse evidence or contradictory information\n\n` +
                 `EVIDENCE RULES:\n` +
-                `- Do NOT conclude "no progress" or outcomeAchievement < 30 unless you cite at least TWO specific, verifiable failures (explicit error states, failed tests, or reversions) from the provided summaries.\n` +
-                `- Ambiguous or missing context must be graded as partial progress (not zero), and confidence must be lowered accordingly.`
-                : `CHUNK SUMMARY FORMAT: ANALYZE THE SCREENSHOTS in this chunk to identify specific elements and describe concrete actions.\n` +
-                `CRITICAL: Your summary MUST combine the previous summary (if any) with what was accomplished in this chunk to give a complete picture of ALL progress so far.\n` +
-                `• User opened [Website/Application Name]\n` +
-                `• User clicked on "[Button Text]" or "[Section Name]"\n` +
-                `• User typed "[exact text]" in [field name]\n` +
-                `• User navigated to [specific page title]\n` +
-                `• User clicked on "[Article Title]" or "[Link Text]"\n` +
-                `• User focused on [Application Name] app (from app_focus events)\n` +
-                `APPLICATION TRACKING: Track app_focus events in this chunk to identify which applications were used.\n` +
-                `If the user focused on apps other than the target app (${meta.quest?.app || 'specified app'}), note this as it may impact scoring.\n` +
-                `REQUIRED: If there is a previous summary, START by restating the key progress from previous chunks, then ADD what happened in this chunk.\n` +
-                `LOOK AT the screenshots to read visible text, identify clickable elements, and determine context. Never just describe coordinates.`;
+                `- Screenshots + actions are PRIMARY evidence for task completion\n` +
+                `- app_focus events are SECONDARY evidence for application validation\n` +
+                `- Do NOT conclude "no progress" unless screenshots show no relevant UI states\n` +
+                `- If screenshots show task-relevant UI AND actions interact with it, assume progress\n` +
+                `- Always cite specific visual evidence: "Screenshot shows X, user clicked Y at those coordinates"`
+                : `CHUNK SUMMARY PROCESS: Follow the three-layer analysis for this chunk.\n` +
+                `\n` +
+                `STEP 1 - Check app_focus events:\n` +
+                `• Note which applications were focused in this chunk (from app_focus events)\n` +
+                `• Briefly confirm if correct app (${meta.quest?.app || 'target app'}) was used\n` +
+                `\n` +
+                `STEP 2 - Analyze screenshots:\n` +
+                `• Identify visible UI elements: menus, buttons, dialogs, content, page titles\n` +
+                `• Note the state/context shown in each screenshot\n` +
+                `\n` +
+                `STEP 3 - Match actions to screenshots:\n` +
+                `• For each click(x,y), identify what UI element is at those coordinates in the screenshot\n` +
+                `• For each type("text"), note the context from screenshots\n` +
+                `• Document the action sequence: what was clicked, what text was entered, what resulted\n` +
+                `\n` +
+                `SUMMARY FORMAT (match actions to visual evidence):\n` +
+                `• [If previous summary exists, briefly recap previous progress first]\n` +
+                `• User focused on [App Name] (from X app_focus events - correct/incorrect app)\n` +
+                `• User clicked "[Button/Menu Text]" (visible at click coordinates in screenshot X)\n` +
+                `• User typed "[text]" in [field name] (visible in screenshot context)\n` +
+                `• Screenshot shows [result/state] after the action\n` +
+                `• Progress toward objectives: [describe visible progress]\n` +
+                `\n` +
+                `CRITICAL REQUIREMENTS:\n` +
+                `• If previous summary exists, START with a brief recap, then ADD this chunk's new actions\n` +
+                `• Always connect click coordinates to visible UI elements in screenshots\n` +
+                `• Never just say "clicked coordinates" - identify WHAT was clicked by looking at screenshot\n` +
+                `• Describe concrete progress visible in screenshots, not assumptions\n` +
+                `\n` +
+                `EXAMPLE: "User continued work in Word (2 app_focus events). Clicked 'File' menu (visible at top-left in screenshot), then clicked 'New Document' option (visible in dropdown). Screenshot shows new blank document opened with cursor ready for input."`;
 
         return [
             header,
