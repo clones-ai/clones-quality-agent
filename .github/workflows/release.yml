@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main, axtree]
+    branches: [main, layers]
   pull_request:
     branches: [main]
 
