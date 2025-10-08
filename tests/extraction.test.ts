@@ -34,6 +34,106 @@ import { Pipeline } from '../src/pipeline/pipeline';
 import fs from 'node:fs/promises';
 import path from 'path';
 import { ProcessedEvent } from '../src/shared/types';
+import { DemoDesktopExtractor } from '../src/stages/extraction/simple-extractor';
+
+describe('Keyboard Layout Support', () => {
+  test('should correctly handle AZERTY keyboard layout using actual_char', async () => {
+    // Create a mock data directory
+    const mockDataDir = path.join(process.cwd(), 'data', 'tests', 'extraction');
+
+    // Create synthetic input_log.jsonl content for typing "HEADER" on AZERTY keyboard
+    // On AZERTY: H=H, E=E, A=KeyQ, D=D, E=E, R=R
+    const azertyEvents = [
+      // H
+      { event: 'keydown', data: { key: 'KeyH', actual_char: 'UnicodeInfo { name: Some("H"), unicode: [72], is_dead: false }' }, time: 1000 },
+      { event: 'keyup', data: { key: 'KeyH', actual_char: '' }, time: 1050 },
+      // E
+      { event: 'keydown', data: { key: 'KeyE', actual_char: 'UnicodeInfo { name: Some("E"), unicode: [69], is_dead: false }' }, time: 1100 },
+      { event: 'keyup', data: { key: 'KeyE', actual_char: '' }, time: 1150 },
+      // A (KeyQ on AZERTY)
+      { event: 'keydown', data: { key: 'KeyQ', actual_char: 'UnicodeInfo { name: Some("A"), unicode: [65], is_dead: false }' }, time: 1200 },
+      { event: 'keyup', data: { key: 'KeyQ', actual_char: '' }, time: 1250 },
+      // D
+      { event: 'keydown', data: { key: 'KeyD', actual_char: 'UnicodeInfo { name: Some("D"), unicode: [68], is_dead: false }' }, time: 1300 },
+      { event: 'keyup', data: { key: 'KeyD', actual_char: '' }, time: 1350 },
+      // E
+      { event: 'keydown', data: { key: 'KeyE', actual_char: 'UnicodeInfo { name: Some("E"), unicode: [69], is_dead: false }' }, time: 1400 },
+      { event: 'keyup', data: { key: 'KeyE', actual_char: '' }, time: 1450 },
+      // R
+      { event: 'keydown', data: { key: 'KeyR', actual_char: 'UnicodeInfo { name: Some("R"), unicode: [82], is_dead: false }' }, time: 1500 },
+      { event: 'keyup', data: { key: 'KeyR', actual_char: '' }, time: 1550 },
+    ];
+
+    // Create a temporary test directory and file
+    const testDir = path.join(mockDataDir, 'azerty_test_' + Date.now());
+    await fs.mkdir(testDir, { recursive: true });
+
+    const jsonlPath = path.join(testDir, 'input_log.jsonl');
+    const jsonlContent = azertyEvents.map(e => JSON.stringify(e)).join('\n');
+    await fs.writeFile(jsonlPath, jsonlContent);
+
+    // Process with the extractor
+    const extractor = new DemoDesktopExtractor(mockDataDir);
+    const testId = path.basename(testDir);
+    const processedEvents = await extractor.process(testId);
+
+    // Find the type event
+    const typeEvents = processedEvents.filter(e => e.type === 'type');
+
+    // Should have exactly one type event with "HEADER"
+    expect(typeEvents.length).toBe(1);
+    expect(typeEvents[0].data.text).toBe('HEADER');
+
+    // The OLD behavior (using key only) would have produced "heqder"
+    // This test verifies we now correctly use actual_char to produce "HEADER"
+
+    console.log('✅ AZERTY keyboard test passed: typed "HEADER" correctly');
+    console.log('   Keys pressed: KeyH, KeyE, KeyQ, KeyD, KeyE, KeyR');
+    console.log('   Result:', typeEvents[0].data.text);
+
+    // Cleanup
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  test('should fallback to key mapping when actual_char is not available', async () => {
+    // Create a mock data directory
+    const mockDataDir = path.join(process.cwd(), 'data', 'tests', 'extraction');
+
+    // Create synthetic input_log.jsonl without actual_char (legacy format)
+    const legacyEvents = [
+      { event: 'keydown', data: { key: 'KeyH' }, time: 1000 },
+      { event: 'keyup', data: { key: 'KeyH' }, time: 1050 },
+      { event: 'keydown', data: { key: 'KeyE' }, time: 1100 },
+      { event: 'keyup', data: { key: 'KeyE' }, time: 1150 },
+    ];
+
+    // Create a temporary test directory and file
+    const testDir = path.join(mockDataDir, 'legacy_test_' + Date.now());
+    await fs.mkdir(testDir, { recursive: true });
+
+    const jsonlPath = path.join(testDir, 'input_log.jsonl');
+    const jsonlContent = legacyEvents.map(e => JSON.stringify(e)).join('\n');
+    await fs.writeFile(jsonlPath, jsonlContent);
+
+    // Process with the extractor
+    const extractor = new DemoDesktopExtractor(mockDataDir);
+    const testId = path.basename(testDir);
+    const processedEvents = await extractor.process(testId);
+
+    // Find the type event
+    const typeEvents = processedEvents.filter(e => e.type === 'type');
+
+    // Should have exactly one type event with "he" (legacy fallback behavior)
+    expect(typeEvents.length).toBe(1);
+    expect(typeEvents[0].data.text).toBe('he');
+
+    console.log('✅ Legacy fallback test passed: correctly fell back to key mapping');
+    console.log('   Result:', typeEvents[0].data.text);
+
+    // Cleanup
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+});
 
 describe('Extraction Pipeline', () => {
   const TEST_SESSION_ID = '6792a2a124f444f0e39ce887';
