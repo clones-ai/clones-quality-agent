@@ -29,6 +29,7 @@ interface InputEvent {
     x?: number;
     y?: number;
     key?: KeyId;
+    actual_char?: string;  // Real character typed (layout-aware)
     button?: string;
     delta?: number;
     id?: number;
@@ -157,6 +158,23 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
   };
 
   constructor(private dataDir: string) { }
+
+  /**
+   * Parse actual_char field to extract the real character typed.
+   * Format: 'UnicodeInfo { name: Some("H"), unicode: [72], is_dead: false }'
+   * Returns the character or null if not available.
+   */
+  private parseActualChar(actualChar?: string): string | null {
+    if (!actualChar) return null;
+
+    // Parse the UnicodeInfo format: name: Some("X")
+    const match = actualChar.match(/name:\s*Some\("([^"]*)"\)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+
+    return null;
+  }
 
   private isSpecialKey(key: KeyId): boolean {
     const specialKeys = new Set<KeyId>([
@@ -374,46 +392,59 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
                 data: { text: event.data.key }
               });
             } else {
-              // Handle regular typing, including Shift+letter for capitals
-              const hasShift = activeModifiers.has('Shift');
-              const mappedKey = hasShift
-                ? this.shiftSymbolMap[event.data.key] || this.symbolMap[event.data.key]
-                : this.symbolMap[event.data.key];
+              // PRIORITY 1: Use actual_char if available (keyboard layout-aware)
+              const actualChar = this.parseActualChar(event.data.actual_char);
 
-              if (mappedKey) {
-                // Symbol or shifted symbol - output the mapped character
-                const charToAdd = mappedKey;
+              if (actualChar) {
+                // We have the real character typed, use it directly
                 if (!textStartTime) {
                   textStartTime = time;
                 }
                 lastKeyTime = time;
-                currentText = !currentText ? charToAdd : currentText + charToAdd;
+                currentText = !currentText ? actualChar : currentText + actualChar;
+                console.log(`[EXTRACTOR-DEBUG] Using actual_char: key=${event.data.key} -> char="${actualChar}"`);
               } else {
-                // Letter key - handle case based on Shift
-                const key = event.data.key.toString();
-                const isWindowsLetter = /^[A-Z]$/.test(key);
-                const isMacLetter = /^Key[A-Z]$/.test(key);
-                const hasShift = activeModifiers.has('Shift') ||
-                  activeModifiers.has('ShiftLeft') ||
-                  activeModifiers.has('ShiftRight');
+                // FALLBACK: Use key mapping (legacy behavior for when actual_char is not available)
+                const hasShift = activeModifiers.has('Shift');
+                const mappedKey = hasShift
+                  ? this.shiftSymbolMap[event.data.key] || this.symbolMap[event.data.key]
+                  : this.symbolMap[event.data.key];
 
-                let charToAdd;
-                if (isWindowsLetter) {
-                  // Windows format: 'A' -> 'a' or 'A'
-                  charToAdd = hasShift ? key : key.toLowerCase();
-                } else if (isMacLetter) {
-                  // Mac format: 'KeyA' -> 'a' or 'A'
-                  const letter = key.slice(3); // Remove 'Key' prefix
-                  charToAdd = hasShift ? letter : letter.toLowerCase();
+                if (mappedKey) {
+                  // Symbol or shifted symbol - output the mapped character
+                  const charToAdd = mappedKey;
+                  if (!textStartTime) {
+                    textStartTime = time;
+                  }
+                  lastKeyTime = time;
+                  currentText = !currentText ? charToAdd : currentText + charToAdd;
                 } else {
-                  charToAdd = key.toLowerCase();
-                }
+                  // Letter key - handle case based on Shift
+                  const key = event.data.key.toString();
+                  const isWindowsLetter = /^[A-Z]$/.test(key);
+                  const isMacLetter = /^Key[A-Z]$/.test(key);
+                  const hasShift = activeModifiers.has('Shift') ||
+                    activeModifiers.has('ShiftLeft') ||
+                    activeModifiers.has('ShiftRight');
 
-                if (!textStartTime) {
-                  textStartTime = time;
+                  let charToAdd;
+                  if (isWindowsLetter) {
+                    // Windows format: 'A' -> 'a' or 'A'
+                    charToAdd = hasShift ? key : key.toLowerCase();
+                  } else if (isMacLetter) {
+                    // Mac format: 'KeyA' -> 'a' or 'A'
+                    const letter = key.slice(3); // Remove 'Key' prefix
+                    charToAdd = hasShift ? letter : letter.toLowerCase();
+                  } else {
+                    charToAdd = key.toLowerCase();
+                  }
+
+                  if (!textStartTime) {
+                    textStartTime = time;
+                  }
+                  lastKeyTime = time;
+                  currentText = !currentText ? charToAdd : currentText + charToAdd;
                 }
-                lastKeyTime = time;
-                currentText = !currentText ? charToAdd : currentText + charToAdd;
               }
             }
           }
@@ -454,25 +485,25 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
 
         case 'axtree_interaction': {
           flushText();
-          
+
           // Debug: Show the actual structure of event.data
           console.log(`[EXTRACTOR-DEBUG] axtree_interaction data structure:`, JSON.stringify(event.data, null, 2));
-          
+
           // Extract focused app and complete window hierarchy from AXTree data
           const axData = event.data;  // Direct access, no nested .data
           if (axData) {
             const focusedApp = axData.focused_app?.name;
             const availableApps = axData.tree?.map((app: any) => app.name) || [];
             const allWindows = axData.tree || [];
-            
+
             console.log(`[EXTRACTOR-DEBUG] app_focus event - focused: ${focusedApp}, available: [${availableApps.join(', ')}]`);
-            
+
             // Only capture app focus events when we have a valid focused app
             if (focusedApp) {
               processedEvents.push({
                 type: 'app_focus',
                 timestamp: time,
-                data: { 
+                data: {
                   focused_app: focusedApp,
                   available_apps: availableApps,
                   all_windows: allWindows
@@ -496,7 +527,7 @@ export class DemoDesktopExtractor implements PipelineStage<string, ProcessedEven
       acc[event.type] = (acc[event.type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    
+
     console.log(`[EXTRACTOR-DEBUG] Generated ${processedEvents.length} total events: ${JSON.stringify(eventTypeCounts)}`);
 
     return processedEvents;
