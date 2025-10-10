@@ -93,6 +93,13 @@ export interface PipelineStage<T, U> {
     process(input: T): Promise<U>;
 }
 
+export interface TaskMetadata {
+    title?: string;
+    description?: string;
+    content?: string;
+    objectives?: string[];
+}
+
 export interface PipelineConfig {
     dataDir: string;
     outputDir: string;

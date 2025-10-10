@@ -8,6 +8,7 @@ import { GuacExtractor } from './stages/extraction/guac-extractor';
 import { VideoExtractor } from './stages/extraction/video-extractor';
 import { DemoDesktopExtractor } from './stages/extraction/simple-extractor';
 import { MessageFormatter } from './stages/formatting/message-formatter';
+import { TaskMetadata } from './shared/types';
 import path from 'path';
 
 import { Grader } from './stages/grading/grader';
@@ -218,6 +219,7 @@ async function gradeSftFile(
 async function runPipelineAndFormat(
   pipeline: Pipeline,
   session: string,
+  dataDir: string,
   outDir: string
 ): Promise<void> {
   const results = await pipeline.process(session);
@@ -225,8 +227,36 @@ async function runPipelineAndFormat(
   await Bun.write(path.join(outDir, session, `results.html`), html);
   await Bun.write(path.join(outDir, session, `results.json`), JSON.stringify(results, null, 2));
 
-  // Format messages
-  const formatter = new MessageFormatter();
+  // Load task metadata from meta.json or manifest.json
+  let taskMetadata: TaskMetadata | undefined = undefined;
+  const metaPath = path.join(dataDir, session, 'meta.json');
+  const manifestPath = path.join(dataDir, session, 'manifest.json');
+  
+  try {
+    if (await Bun.file(metaPath).exists()) {
+      const meta = await Bun.file(metaPath).json();
+      taskMetadata = {
+        title: meta?.quest?.title || meta?.title,
+        description: meta?.quest?.content || meta?.description,
+        content: meta?.quest?.content || meta?.description,
+        objectives: meta?.quest?.objectives
+      };
+      console.log(`[FORMATTER-DEBUG] Loaded task metadata from meta.json: ${taskMetadata.content}`);
+    } else if (await Bun.file(manifestPath).exists()) {
+      const manifest = await Bun.file(manifestPath).json();
+      taskMetadata = {
+        title: manifest?.task?.title,
+        description: manifest?.task?.description,
+        content: manifest?.task?.description
+      };
+      console.log(`[FORMATTER-DEBUG] Loaded task metadata from manifest.json: ${taskMetadata.content}`);
+    }
+  } catch (error) {
+    console.log(`[FORMATTER-DEBUG] Could not load task metadata: ${error}`);
+  }
+
+  // Format messages with task metadata
+  const formatter = new MessageFormatter(taskMetadata);
   const messages = await formatter.process(results);
 
   // Write formatted messages
@@ -251,7 +281,7 @@ async function processSession(
 
   if (!sftExists) {
     console.log('No sft.json found, running pipeline...');
-    await runPipelineAndFormat(pipeline, session, outDir);
+    await runPipelineAndFormat(pipeline, session, dataDir, outDir);
   } else {
     console.log('Found existing sft.json.');
   }

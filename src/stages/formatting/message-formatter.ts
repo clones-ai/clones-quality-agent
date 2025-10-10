@@ -1,9 +1,35 @@
-import { Message, ProcessedEvent, PipelineStage } from "../../shared/types";
+import { Message, ProcessedEvent, PipelineStage, TaskMetadata } from "../../shared/types";
 
 export class MessageFormatter implements PipelineStage<ProcessedEvent[], Message[]> {
+    constructor(private taskMetadata?: TaskMetadata) {}
+
     async process(events: ProcessedEvent[]): Promise<Message[]> {
         const messages: Message[] = [];
         console.log(`[FORMATTER-DEBUG] Processing ${events.length} events, looking for app_focus events...`);
+
+        // Add initial user instruction if available
+        if (this.taskMetadata?.content || this.taskMetadata?.description) {
+            const userInstruction = this.taskMetadata.content || this.taskMetadata.description;
+            
+            if (userInstruction) {
+                let finalInstruction = userInstruction;
+                
+                // Add structured objectives if available
+                if (this.taskMetadata.objectives && this.taskMetadata.objectives.length > 0) {
+                    finalInstruction += "\n\nPlease follow these steps:\n";
+                    this.taskMetadata.objectives.forEach((objective, index) => {
+                        finalInstruction += `${index + 1}. ${objective}\n`;
+                    });
+                }
+                
+                messages.push({
+                    role: "user",
+                    content: finalInstruction.trim(),
+                    timestamp: events.length > 0 ? events[0].timestamp - 1 : 0 // Place before first event
+                });
+                console.log(`[FORMATTER-DEBUG] Added user instruction with ${this.taskMetadata.objectives?.length || 0} objectives`);
+            }
+        }
 
         // Count app_focus events
         const appFocusCount = events.filter(e => e.type === 'app_focus').length;
